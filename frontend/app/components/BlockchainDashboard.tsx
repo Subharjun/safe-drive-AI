@@ -195,7 +195,7 @@ export default function BlockchainDashboard({ currentSafetyMetrics }: Blockchain
                 <li>• Track your blockchain-verified driving history</li>
               </ul>
               <p className="text-xs text-blue-600 mt-2">
-                💡 Make sure you're on Celo Alfajores testnet
+                💡 Make sure you&apos;re on Celo Alfajores testnet
               </p>
             </div>
           </div>

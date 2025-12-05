@@ -454,13 +454,13 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           <div className="text-center py-8 text-gray-500">
             <div className="text-4xl mb-2">⏸️</div>
             <p>Start Live Monitor to enable safety features</p>
-            <p className="text-sm">Or click "Emergency Stop" button below for immediate help</p>
+            <p className="text-sm">Or click &quot;Emergency Stop&quot; button below for immediate help</p>
           </div>
         ) : !emergencyMode && activeAlerts.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <div className="text-4xl mb-2">✅</div>
             <p>No safety alerts - safe stops not needed</p>
-            <p className="text-sm">Click "Emergency Stop" if you need immediate assistance</p>
+            <p className="text-sm">Click &quot;Emergency Stop&quot; if you need immediate assistance</p>
           </div>
         ) : loadingStops ? (
           <div className="text-center py-8 text-gray-500">
