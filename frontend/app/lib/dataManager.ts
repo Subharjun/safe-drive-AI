@@ -186,17 +186,75 @@ export class DataManager {
   }
 
   /**
-   * Save wellness data (persists across sessions)
+   * Save wellness data (now uses MongoDB via backend API)
+   * Note: Data is automatically saved by backend when monitoring is active
    */
   saveWellnessData(data: any): void {
-    this.saveData('wellnessHistory', data, { persistent: true, maxItems: 100 });
+    // Data is now saved automatically by backend API
+    // This method kept for backward compatibility
+    console.log('💾 Wellness data saved to MongoDB via backend API');
   }
 
   /**
-   * Get wellness history
+   * Get wellness history from MongoDB
    */
-  getWellnessHistory(): any[] {
-    return this.getData('wellnessHistory', { persistent: false }) || [];
+  async getWellnessHistory(): Promise<any[]> {
+    try {
+      const response = await fetch('http://localhost:8000/api/wellness/history');
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`📊 Retrieved ${data.count} wellness records from MongoDB`);
+        return data.history || [];
+      } else {
+        console.error('Failed to fetch wellness history from MongoDB');
+        return [];
+      }
+    } catch (error) {
+      console.error('Error fetching wellness history:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get grouped wellness sessions from MongoDB
+   */
+  async getWellnessSessions(): Promise<any[]> {
+    try {
+      const response = await fetch('http://localhost:8000/api/wellness/sessions');
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`📊 Retrieved ${data.total_sessions} sessions (${data.total_records} records) from MongoDB`);
+        return data.sessions || [];
+      } else {
+        console.error('Failed to fetch wellness sessions from MongoDB');
+        return [];
+      }
+    } catch (error) {
+      console.error('Error fetching wellness sessions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Clear all wellness data from MongoDB
+   */
+  async clearWellnessData(): Promise<boolean> {
+    try {
+      const response = await fetch('http://localhost:8000/api/wellness/clear', {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`🗑️ Cleared ${data.deleted_count} records from MongoDB`);
+        return true;
+      } else {
+        console.error('Failed to clear wellness data from MongoDB');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error clearing wellness data:', error);
+      return false;
+    }
   }
 
   /**

@@ -82,11 +82,8 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
 
           onDataUpdate(monitoringData);
 
-          // Save wellness data for persistence
-          dataManager.saveWellnessData({
-            ...monitoringData,
-            timestamp: new Date().toISOString(),
-          });
+          // Data is automatically saved to MongoDB by backend API
+          // No need for manual localStorage save
 
           // Generate real-time safety tips using Groq AI
           if (!isGeneratingTips) {

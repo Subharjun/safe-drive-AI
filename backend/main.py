@@ -1059,6 +1059,118 @@ def generate_mock_safe_stops(lat: float, lon: float) -> list:
     
     return sorted(stops, key=lambda x: x['distance'])
 
+@app.get("/api/wellness/history")
+async def get_wellness_history(limit: int = 1000):
+    """Get wellness monitoring history from MongoDB"""
+    try:
+        results = []
+        cursor = db.monitoring_sessions.find().sort("timestamp", -1).limit(limit)
+        async for doc in cursor:
+            # Convert ObjectId to string for JSON serialization
+            doc["_id"] = str(doc["_id"])
+            # Convert datetime to ISO string
+            if "timestamp" in doc:
+                doc["timestamp"] = doc["timestamp"].isoformat()
+            results.append(doc)
+        
+        logging.info(f"📊 Retrieved {len(results)} wellness records from MongoDB")
+        return {"history": results, "count": len(results)}
+        
+    except Exception as e:
+        logging.error(f"Error retrieving wellness history: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to retrieve history: {str(e)}"}
+        )
+
+@app.get("/api/wellness/sessions")
+async def get_wellness_sessions():
+    """Get grouped wellness sessions from MongoDB"""
+    try:
+        # Get all monitoring data sorted by timestamp
+        all_data = []
+        cursor = db.monitoring_sessions.find().sort("timestamp", 1)
+        async for doc in cursor:
+            all_data.append({
+                "timestamp": doc["timestamp"],
+                "drowsiness": doc.get("drowsiness_score", 0),
+                "stress": doc.get("stress_level", 0),
+            })
+        
+        # Group into sessions (gap > 5 minutes = new session)
+        sessions = []
+        current_session = []
+        last_timestamp = None
+        
+        for item in all_data:
+            timestamp = item["timestamp"]
+            
+            # New session if gap > 5 minutes
+            if last_timestamp and (timestamp - last_timestamp).total_seconds() > 300:
+                if current_session:
+                    sessions.append(create_session_summary(current_session))
+                    current_session = []
+            
+            current_session.append(item)
+            last_timestamp = timestamp
+        
+        # Add last session
+        if current_session:
+            sessions.append(create_session_summary(current_session))
+        
+        logging.info(f"📊 Grouped {len(all_data)} records into {len(sessions)} sessions")
+        return {"sessions": sessions, "total_sessions": len(sessions), "total_records": len(all_data)}
+        
+    except Exception as e:
+        logging.error(f"Error retrieving sessions: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to retrieve sessions: {str(e)}"}
+        )
+
+def create_session_summary(session_data: list) -> dict:
+    """Create summary statistics for a session"""
+    if not session_data:
+        return {}
+    
+    start_time = session_data[0]["timestamp"]
+    end_time = session_data[-1]["timestamp"]
+    duration = (end_time - start_time).total_seconds() / 60  # minutes
+    
+    avg_drowsiness = sum(item["drowsiness"] for item in session_data) / len(session_data)
+    avg_stress = sum(item["stress"] for item in session_data) / len(session_data)
+    safety_score = max(0, 100 - (avg_drowsiness * 30 + avg_stress * 25))
+    
+    return {
+        "session_id": f"session-{int(start_time.timestamp())}",
+        "date": start_time.strftime("%Y-%m-%d"),
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "duration": round(duration, 1),
+        "avg_drowsiness": round(avg_drowsiness * 100, 1),
+        "avg_stress": round(avg_stress * 100, 1),
+        "safety_score": round(safety_score, 1),
+        "data_points": len(session_data)
+    }
+
+@app.delete("/api/wellness/clear")
+async def clear_wellness_data():
+    """Clear all wellness monitoring data from MongoDB"""
+    try:
+        result = await db.monitoring_sessions.delete_many({})
+        logging.info(f"🗑️ Cleared {result.deleted_count} wellness records from MongoDB")
+        return {
+            "success": True,
+            "deleted_count": result.deleted_count,
+            "message": f"Cleared {result.deleted_count} records"
+        }
+    except Exception as e:
+        logging.error(f"Error clearing wellness data: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to clear data: {str(e)}"}
+        )
+
 @app.get("/api/analytics")
 async def get_analytics():
     """Get driver wellness analytics"""

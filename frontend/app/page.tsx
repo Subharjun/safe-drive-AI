@@ -5,6 +5,8 @@ import DashboardLayout from './components/DashboardLayout'
 import VideoMonitor from './components/VideoMonitor'
 import RouteOptimizer from './components/RouteOptimizer'
 import CombinedDashboard from './components/CombinedDashboard'
+import SafetyAlerts from './components/SafetyAlerts'
+import BlockchainDashboard from './components/BlockchainDashboard'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -36,7 +38,9 @@ export default function Home() {
   const tabs = [
     { id: 'routes', label: 'Navigation & Routes', icon: '🗺️' },
     { id: 'monitor', label: 'Live Monitor', icon: '📹' },
-    { id: 'dashboard', label: 'Wellness Dashboard', icon: '📊' }
+    { id: 'dashboard', label: 'Wellness & Analytics', icon: '📊' },
+    { id: 'alerts', label: 'Safety Alerts', icon: '🚨' },
+    { id: 'blockchain', label: 'Blockchain', icon: '🔗' }
   ]
 
   const renderContent = () => {
@@ -47,6 +51,22 @@ export default function Home() {
         return <RouteOptimizer />
       case 'dashboard':
         return <CombinedDashboard data={monitoringData} onNavigateToMonitor={() => setActiveTab('monitor')} />
+      case 'alerts':
+        return <SafetyAlerts data={monitoringData} />
+      case 'blockchain':
+        return <BlockchainDashboard 
+          currentSafetyMetrics={
+            monitoringData.isActive
+              ? {
+                  drowsinessLevel: monitoringData.drowsiness * 100,
+                  stressLevel: monitoringData.stress * 100,
+                  interventionCount: 0,
+                  routeCompliance: 95,
+                  drivingDuration: 0,
+                }
+              : undefined
+          }
+        />
       default:
         return <CombinedDashboard data={monitoringData} onNavigateToMonitor={() => setActiveTab('monitor')} />
     }

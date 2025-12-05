@@ -41,6 +41,7 @@ Our Solution: Real-time AI monitoring + Blockchain rewards
 
 **Subtitle:**
 Feature 1: AI-Powered Live Monitoring
+
 - Real-time facial analysis
 - Drowsiness detection
 - Stress level monitoring
@@ -54,6 +55,7 @@ Feature 1: AI-Powered Live Monitoring
 
 **Subtitle:**
 Feature 2: Intelligent Safety Alerts
+
 - Automatic danger detection
 - Emergency stop finder
 - Real nearby locations
@@ -67,6 +69,7 @@ Feature 2: Intelligent Safety Alerts
 
 **Subtitle:**
 Feature 3: Smart Route Planning
+
 - Optimal route calculation
 - AI rest stop recommendations
 - Safety-first navigation
@@ -80,6 +83,7 @@ Feature 3: Smart Route Planning
 
 **Subtitle:**
 Feature 4: Blockchain Rewards System
+
 - Earn tokens for safe driving
 - Collect achievement NFTs
 - Tamper-proof records on Celo
@@ -93,6 +97,7 @@ Feature 4: Blockchain Rewards System
 
 **Subtitle:**
 Feature 5: Comprehensive Analytics
+
 - Historical data tracking
 - Personalized AI tips
 - Performance insights
@@ -106,6 +111,7 @@ Feature 5: Comprehensive Analytics
 
 **Subtitle:**
 Technology Stack:
+
 - Frontend: Next.js, React, TailwindCSS
 - Backend: FastAPI, Python, OpenCV
 - AI: Groq, Hugging Face, Computer Vision
@@ -121,6 +127,7 @@ Technology Stack:
 
 **Subtitle:**
 Professional UI/UX:
+
 - Glassmorphism design
 - Gradient animations
 - Mobile responsive
@@ -135,6 +142,7 @@ Professional UI/UX:
 
 **Subtitle:**
 Real-World Impact:
+
 - Prevents fatigue-related accidents
 - Promotes healthy driving habits
 - Creates verifiable safety records
@@ -169,16 +177,19 @@ Powered by AI • Secured by Blockchain
 ### **Recommended Tools:**
 
 1. **ElevenLabs** (Free tier)
+
    - URL: https://elevenlabs.io
    - Best quality, natural voices
    - 10,000 characters/month free
 
 2. **Play.ht** (Free tier)
+
    - URL: https://play.ht
    - Multiple voice options
    - Good for technical content
 
 3. **Natural Reader** (Free)
+
    - URL: https://www.naturalreaders.com
    - Simple interface
    - Download as MP3
@@ -203,34 +214,41 @@ Powered by AI • Secured by Blockchain
 ### **Screen Recording Sequence:**
 
 1. **Intro** (5 sec)
+
    - Show logo/landing page
 
 2. **Live Monitor Demo** (20 sec)
+
    - Show camera feed
    - Display drowsiness detection
    - Show alerts triggering
 
 3. **Safety Alerts** (15 sec)
+
    - Trigger emergency stop
    - Show map with locations
    - Display nearby stops
 
 4. **Route Planning** (20 sec)
+
    - Enter origin/destination
    - Calculate route
    - Show rest stop recommendations
 
 5. **Blockchain Dashboard** (15 sec)
+
    - Show wallet connection
    - Display token balance
    - Show NFT achievements
 
 6. **Analytics** (15 sec)
+
    - Show graphs and charts
    - Display wellness metrics
    - Show AI tips
 
 7. **UI Showcase** (10 sec)
+
    - Quick navigation through tabs
    - Show responsive design
    - Highlight animations
