@@ -40,8 +40,13 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
 
   useEffect(() => {
     if (isMonitoring) {
-      // Connect to WebSocket
-      const websocket = new WebSocket("ws://localhost:8000/ws/monitor");
+      // Connect to WebSocket - use environment variable for backend URL
+      const backendUrl =
+        process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const wsUrl = backendUrl
+        .replace("https://", "wss://")
+        .replace("http://", "ws://");
+      const websocket = new WebSocket(`${wsUrl}/ws/monitor`);
 
       websocket.onopen = () => {
         console.log("WebSocket connected");
@@ -57,7 +62,7 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
             recommendations: data.recommendations || [],
             detailedMetrics: data.detailed_metrics || {},
           };
-          
+
           setCurrentData(newData);
 
           const monitoringData = {
@@ -80,10 +85,12 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
           if (!isGeneratingTips) {
             setIsGeneratingTips(true);
             try {
-              const tips = await safetyTipsService.generateSafetyTips(monitoringData);
+              const tips = await safetyTipsService.generateSafetyTips(
+                monitoringData
+              );
               setSafetyTips(tips);
             } catch (error) {
-              console.error('Error generating safety tips:', error);
+              console.error("Error generating safety tips:", error);
             } finally {
               setIsGeneratingTips(false);
             }
@@ -352,7 +359,8 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
                       Model Confidence
                     </span>
                     <span className="text-xs text-gray-800">
-                      {currentData.detailedMetrics.drowsiness.metrics?.Confidence || "N/A"}
+                      {currentData.detailedMetrics.drowsiness.metrics
+                        ?.Confidence || "N/A"}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -367,7 +375,8 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
                       Trend Analysis
                     </span>
                     <span className="text-xs text-gray-800">
-                      {currentData.detailedMetrics.drowsiness.metrics?.Trend || "N/A"}
+                      {currentData.detailedMetrics.drowsiness.metrics?.Trend ||
+                        "N/A"}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -431,7 +440,8 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
                       Model Confidence
                     </span>
                     <span className="text-xs text-gray-800">
-                      {currentData.detailedMetrics.stress.metrics?.Confidence || "N/A"}
+                      {currentData.detailedMetrics.stress.metrics?.Confidence ||
+                        "N/A"}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -446,8 +456,9 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
                       Stress Assessment
                     </span>
                     <span className="text-xs text-gray-800">
-                      {currentData.detailedMetrics.stress.metrics?.["Stress Level"] ||
-                        "N/A"}
+                      {currentData.detailedMetrics.stress.metrics?.[
+                        "Stress Level"
+                      ] || "N/A"}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
@@ -475,33 +486,35 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
               </div>
             )}
           </div>
-          
+
           <div className="space-y-3">
             {safetyTips.map((tip) => (
               <div
                 key={tip.id}
                 className={`p-4 rounded-lg border-l-4 ${
-                  tip.priority === 'critical' 
-                    ? 'bg-red-50 border-red-500' 
-                    : tip.priority === 'high'
-                    ? 'bg-orange-50 border-orange-500'
-                    : tip.priority === 'medium'
-                    ? 'bg-yellow-50 border-yellow-500'
-                    : 'bg-blue-50 border-blue-500'
+                  tip.priority === "critical"
+                    ? "bg-red-50 border-red-500"
+                    : tip.priority === "high"
+                    ? "bg-orange-50 border-orange-500"
+                    : tip.priority === "medium"
+                    ? "bg-yellow-50 border-yellow-500"
+                    : "bg-blue-50 border-blue-500"
                 }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        tip.priority === 'critical' 
-                          ? 'bg-red-100 text-red-800' 
-                          : tip.priority === 'high'
-                          ? 'bg-orange-100 text-orange-800'
-                          : tip.priority === 'medium'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          tip.priority === "critical"
+                            ? "bg-red-100 text-red-800"
+                            : tip.priority === "high"
+                            ? "bg-orange-100 text-orange-800"
+                            : tip.priority === "medium"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
                         {tip.priority.toUpperCase()}
                       </span>
                       <span className="text-xs text-gray-500">
@@ -524,7 +537,7 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
               </div>
             ))}
           </div>
-          
+
           <div className="mt-3 text-xs text-gray-500 text-center">
             Powered by Groq AI • Updates every 30 seconds
           </div>

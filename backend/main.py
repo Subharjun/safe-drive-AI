@@ -33,7 +33,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://safedrive-frontend.onrender.com",  # Production frontend
-        "https://*.onrender.com"  # Allow all Render preview deployments
+        "https://*.onrender.com",  # Allow all Render preview deployments
+        "*"  # Allow all origins for WebSocket connections
     ],
     allow_credentials=True,
     allow_methods=["*"],
