@@ -948,7 +948,10 @@ async def find_safe_stops(lat: float, lon: float, radius: int = 5000):
 async def find_rest_stops_serp(origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float):
     """Find rest stops between origin and destination using SerpAPI"""
     try:
-        SERPAPI_KEY = os.getenv("SERPAPI_KEY", "2a6735559a92dd065d000665165c6e1f893e0b163f723e5bfab9095a1beb39a2")
+        SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+        
+        if not SERPAPI_KEY:
+            return {"error": "SerpAPI key not configured", "stops": []}
         
         # Calculate midpoint
         mid_lat = (origin_lat + dest_lat) / 2
