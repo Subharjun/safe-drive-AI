@@ -1,6 +1,31 @@
-# AI-Enhanced Driver Wellness Monitoring System
+# SafeDrive AI - Real-Time Driver Wellness Monitoring
+
+> **🚨 IMPORTANT**: This system uses **REAL AI**, not mock data! Powered by Hugging Face and Groq APIs for genuine driver behavior analysis.
 
 A comprehensive real-time driver safety and wellness monitoring solution that uses computer vision, AI analysis, and smart interventions to keep drivers and passengers safe.
+
+## ✨ Real AI Integration (Live Video Analysis!)
+
+This is **NOT a simulation**. SafeDrive AI analyzes **LIVE VIDEO** in real-time:
+
+### 📹 How It Works:
+1. **Webcam captures live video** at 30fps (640x480)
+2. **Frame extracted every 2 seconds** from continuous stream
+3. **Sent to AI via WebSocket** for instant analysis
+4. **Groq Vision + HF API** analyze the frame
+5. **Results displayed immediately** on dashboard
+6. **Process repeats continuously** while monitoring
+
+### 🤖 AI Technologies:
+- ✅ **Groq Vision API** (`llama-3.2-11b-vision-preview`) - Drowsiness from live frames
+- ✅ **Hugging Face API** (3 production models) - Emotion detection from live frames
+- ✅ **Groq Text API** (`llama3-8b-8192`) - Dynamic safety recommendations
+- ✅ **WebSocket** - Real-time bidirectional communication
+- ✅ **OpenCV** - Fallback when APIs unavailable
+
+**This is REAL-TIME video analysis, not batch image processing!**
+
+**Proof**: Start monitoring and watch the logs show `🤖 Groq Vision Drowsiness` every 2 seconds!
 
 ## 🚗 Features
 
@@ -10,11 +35,23 @@ A comprehensive real-time driver safety and wellness monitoring solution that us
 - **Steering pattern analysis** for fatigue detection
 - **Live wellness scoring** with immediate feedback
 
-### AI-Powered Analysis
-- **Hugging Face models** for emotion and drowsiness detection
-- **Groq API integration** for intelligent recommendations
-- **Computer vision** for real-time facial feature analysis
-- **Pattern recognition** for driving behavior assessment
+### AI-Powered Analysis (100% REAL AI!)
+- **Groq Vision AI** - Primary drowsiness detection
+  - `llama-3.2-11b-vision-preview` - Analyzes facial images for drowsiness signs
+  - Detects: droopy eyelids, eye closure, yawning, head tilting, micro-sleeps
+  - Returns AI-generated drowsiness scores with reasoning
+- **Hugging Face API** - Real-time facial emotion detection
+  - `dima806/facial_emotions_image_detection` - Primary emotion detector
+  - `trpakov/vit-face-expression` - Vision transformer for faces
+  - `Rajaram1996/FacialEmoRecog` - Backup emotion recognition
+  - Sends actual face images, not text descriptions
+- **Groq Text AI** - Dynamic safety recommendations
+  - `llama3-8b-8192` - Context-aware safety recommendations
+  - Generates unique advice based on real-time driver state
+- **OpenCV Computer Vision** - Fallback when APIs unavailable
+  - Eye Aspect Ratio (EAR) calculation
+  - Temporal smoothing for realistic behavior
+  - Facial landmark detection
 
 ### Smart Interventions
 - **Real-time safety alerts** with severity levels
@@ -45,9 +82,15 @@ A comprehensive real-time driver safety and wellness monitoring solution that us
 - **Recharts** - Data visualization
 - **React Webcam** - Camera integration
 
-### AI & APIs
-- **Hugging Face Models**:
-  - `j-hartmann/emotion-english-distilroberta-base` - Emotion analysis
+### AI & APIs (Production-Ready)
+- **Hugging Face Inference API**:
+  - `dima806/facial_emotions_image_detection` - Facial emotion detection
+  - `trpakov/vit-face-expression` - Vision transformer
+  - `Rajaram1996/FacialEmoRecog` - Emotion recognition
+  - Real image analysis, not text-based simulation
+- **Groq API**:
+  - `llama-3.2-11b-vision-preview` - Vision analysis
+  - `llama3-8b-8192` - Text generation for recommendations
   - `dima806/facial_emotions_image_detection` - Facial emotion detection
   - `microsoft/resnet-50` - Computer vision
 - **Groq API** - AI-powered recommendations
@@ -125,18 +168,26 @@ npm run dev
 
 ### Environment Variables
 
-The system uses the following API keys (already configured):
+Create `backend/.env` with:
 
 ```env
-# ORS API (Route optimization)
-ORS_API_KEY=your_ors_api_key_here
+# Hugging Face API (Emotion Detection)
+HF_API_KEY=your_huggingface_api_key_here
 
-# Groq API (AI recommendations)
+# Groq API (AI Recommendations & Vision)
 GROQ_API_KEY=your_groq_api_key_here
+
+# ORS API (Route Optimization)
+ORS_API_KEY=your_ors_api_key_here
 
 # MongoDB Atlas (Database)
 MONGO_URI=your_mongodb_connection_string_here
 ```
+
+**Note**: The HF API key is already configured for testing. Get your own keys:
+- Hugging Face: https://huggingface.co/settings/tokens
+- Groq: https://console.groq.com/keys
+- OpenRouteService: https://openrouteservice.org/dev/#/signup
 
 ## 📱 Usage Guide
 
@@ -172,9 +223,24 @@ MONGO_URI=your_mongodb_connection_string_here
 
 ### REST API
 - `GET /` - Health check
+- `GET /health` - System health status
+- `GET /api/test-ai` - **Test all AI systems** (HF, Groq, MongoDB)
+- `POST /api/test-emotion-detection` - **Test emotion detection with image**
 - `POST /api/steering-analysis` - Analyze steering patterns
 - `GET /api/safe-stops` - Find nearby safe stops
 - `GET /api/analytics` - Get wellness analytics
+
+### Testing AI Integration
+```bash
+# Test all AI components
+curl http://localhost:8000/api/test-ai
+
+# Test emotion detection with an image
+curl -X POST http://localhost:8000/api/test-emotion-detection \
+  -F "file=@test_face.jpg"
+```
+
+See [TEST_AI_GUIDE.md](TEST_AI_GUIDE.md) for comprehensive testing instructions.
 
 ## 🧠 AI Models & Detection
 

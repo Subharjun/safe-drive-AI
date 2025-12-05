@@ -13,6 +13,7 @@ class APIConfig:
     ors_api_key: str
     groq_api_key: str
     mongo_uri: str
+    hf_api_key: str
 
 @dataclass
 class AppConfig:
@@ -60,7 +61,8 @@ class Config:
         return APIConfig(
             ors_api_key=os.getenv("ORS_API_KEY", ""),
             groq_api_key=os.getenv("GROQ_API_KEY", ""),
-            mongo_uri=os.getenv("MONGO_URI", "")
+            mongo_uri=os.getenv("MONGO_URI", ""),
+            hf_api_key=os.getenv("HF_API_KEY", "")
         )
     
     def _load_app_config(self) -> AppConfig:
