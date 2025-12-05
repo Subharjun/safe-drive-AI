@@ -251,21 +251,47 @@ export class DataManager {
   }
 
   /**
-   * Clear session data from MongoDB
+   * Clear session data from MongoDB (monitoring_sessions collection)
    */
   async clearSessionData(): Promise<boolean> {
-    return this.deleteFromMongoDB('wellness_sessions');
+    return this.deleteFromMongoDB('monitoring_sessions');
   }
 
   /**
-   * Clear all MongoDB data
+   * Clear only analytics/monitoring data permanently
+   */
+  async clearAnalyticsData(): Promise<boolean> {
+    try {
+      // Clear from MongoDB
+      const mongoCleared = await this.deleteFromMongoDB('monitoring_sessions');
+      
+      // Clear from localStorage
+      this.clearData('wellnessHistory');
+      
+      console.log('✅ Analytics data cleared permanently');
+      return mongoCleared;
+    } catch (error) {
+      console.error('❌ Error clearing analytics data:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Clear all MongoDB data - deletes from actual backend collections
    */
   async clearAllMongoData(): Promise<boolean> {
-    const collections = ['search_locations', 'wellness_sessions', 'route_history'];
+    // These are the actual collection names used by the backend
+    const collections = [
+      'monitoring_sessions',  // Main wellness data
+      'search_locations',     // Search history
+      'route_history'         // Route data
+    ];
+    
     const results = await Promise.all(
       collections.map(collection => this.deleteFromMongoDB(collection))
     );
     
+    console.log('🗑️ MongoDB deletion results:', results);
     return results.every(result => result);
   }
 }
@@ -291,4 +317,5 @@ export const {
   clearSearchLocations,
   clearSessionData,
   clearAllMongoData,
+  clearAnalyticsData,
 } = dataManager;

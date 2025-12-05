@@ -54,62 +54,79 @@ export default function Home() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
+      <div className="space-y-6 animate-fade-in">
+        {/* Professional Header with Gradient */}
+        <div className="glass rounded-2xl p-4 sm:p-8 animate-slide-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Driver Wellness Monitor
-              </h1>
-              <p className="text-gray-600 mt-1">
-                AI-Enhanced Safety and Wellness Monitoring System
-              </p>
+              <div className="flex items-center space-x-3 mb-2">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <span className="text-2xl">🚗</span>
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    SafeDrive AI
+                  </h1>
+                  <p className="text-gray-600 text-xs sm:text-sm font-medium">
+                    AI-Powered Driver Wellness & Safety Platform
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3 sm:space-x-4">
               <button
                 onClick={() => setActiveTab('routes')}
-                className="btn-secondary text-sm flex items-center space-x-2"
+                className="btn-secondary text-xs sm:text-sm flex items-center space-x-2 no-print"
               >
                 <span>🗺️</span>
                 <span>Quick Maps</span>
               </button>
               <div className={`status-indicator ${
-                monitoringData.isActive ? 'status-safe' : 'bg-gray-100 text-gray-600'
+                monitoringData.isActive ? 'status-safe animate-pulse-glow' : 'bg-gray-100 text-gray-600 border border-gray-300'
               }`}>
-                <div className={`w-2 h-2 rounded-full mr-2 ${
-                  monitoringData.isActive ? 'bg-success-500 animate-pulse' : 'bg-gray-400'
+                <div className={`w-2.5 h-2.5 rounded-full mr-2 ${
+                  monitoringData.isActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
                 }`}></div>
-                {monitoringData.isActive ? 'Active' : 'Inactive'}
+                <span className="font-semibold">{monitoringData.isActive ? 'Live' : 'Offline'}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="border-b border-gray-200">
-            <nav className="flex space-x-8 px-6">
+        {/* Modern Navigation Tabs */}
+        <div className="glass rounded-2xl overflow-hidden animate-slide-in">
+          <div className="border-b border-gray-200/50 overflow-x-auto bg-gradient-to-r from-gray-50 to-blue-50/30">
+            <nav className="flex space-x-1 px-4 sm:px-6 min-w-max">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  className={`py-4 px-4 sm:px-6 font-semibold text-xs sm:text-sm transition-all duration-300 whitespace-nowrap relative ${
                     activeTab === tab.id
-                      ? 'border-primary-500 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'text-blue-600'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <span className="mr-2">{tab.icon}</span>
-                  {tab.label}
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">{tab.icon}</span>
+                    <span className="hidden sm:inline">{tab.label}</span>
+                    <span className="sm:hidden">
+                      {tab.label.split(' ')[0]}
+                    </span>
+                  </div>
+                  {activeTab === tab.id && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-full"></div>
+                  )}
                 </button>
               ))}
             </nav>
           </div>
           
-          {/* Tab Content */}
-          <div className="p-6">
-            {renderContent()}
+          {/* Tab Content with Animation */}
+          <div className="p-4 sm:p-8 bg-white/50">
+            <div className="animate-fade-in">
+              {renderContent()}
+            </div>
           </div>
         </div>
       </div>

@@ -359,6 +359,7 @@ export default function LiveRouteTracker() {
         >
           {mapLoaded ? (
             <MapContainer
+              key={`map-${currentLocation.lat}-${currentLocation.lon}`}
               center={[currentLocation.lat, currentLocation.lon]}
               zoom={isExpanded ? 14 : 12}
               style={{ height: "100%", width: "100%" }}
@@ -381,16 +382,18 @@ export default function LiveRouteTracker() {
               />
 
               {/* Route Polyline */}
-              {routeData && routeData.coordinates.length > 0 && (
-                <Polyline
-                  positions={routeData.coordinates.map(
-                    (coord) => [coord[1], coord[0]] as [number, number]
-                  )}
-                  color="#3b82f6"
-                  weight={3}
-                  opacity={0.8}
-                />
-              )}
+              {routeData &&
+                routeData.coordinates &&
+                routeData.coordinates.length > 0 && (
+                  <Polyline
+                    positions={routeData.coordinates.map(
+                      (coord) => [coord[1], coord[0]] as [number, number]
+                    )}
+                    color="#3b82f6"
+                    weight={3}
+                    opacity={0.8}
+                  />
+                )}
             </MapContainer>
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
@@ -435,14 +438,16 @@ export default function LiveRouteTracker() {
           </div>
 
           {/* Route Progress */}
-          {routeData && (
+          {routeData && routeData.currentProgress !== undefined && (
             <div className="absolute bottom-2 left-2 right-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs pointer-events-none">
               <div className="flex justify-between items-center mb-1">
-                <span>{routeData.currentProgress.toFixed(0)}% Complete</span>
+                <span>
+                  {(routeData.currentProgress || 0).toFixed(0)}% Complete
+                </span>
                 <span>
                   {(
-                    routeData.distance *
-                    (1 - routeData.currentProgress / 100)
+                    (routeData.distance || 0) *
+                    (1 - (routeData.currentProgress || 0) / 100)
                   ).toFixed(1)}{" "}
                   km left
                 </span>
@@ -531,21 +536,6 @@ export default function LiveRouteTracker() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (currentLocation) {
-                  window.open(
-                    `https://www.google.com/maps/@${currentLocation.lat},${currentLocation.lon},15z`,
-                    "_blank"
-                  );
-                }
-              }}
-              className="w-full bg-gray-600 text-white px-3 py-2 rounded text-xs hover:bg-gray-700 transition-colors"
-            >
-              🌍 Open in Google Maps
-            </button>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
                 setPosition({ x: 20, y: 100 }); // Reset to default position
               }}
               className="w-full bg-gray-400 text-white px-3 py-2 rounded text-xs hover:bg-gray-500 transition-colors"
@@ -559,18 +549,18 @@ export default function LiveRouteTracker() {
               <div className="text-xs text-gray-600">
                 <div className="flex justify-between">
                   <span>Distance:</span>
-                  <span>{routeData.distance.toFixed(1)} km</span>
+                  <span>{routeData.distance?.toFixed(1) || "0"} km</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Duration:</span>
                   <span>
-                    {Math.round(routeData.duration / 60)}h{" "}
-                    {routeData.duration % 60}m
+                    {Math.round((routeData.duration || 0) / 60)}h{" "}
+                    {(routeData.duration || 0) % 60}m
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Progress:</span>
-                  <span>{routeData.currentProgress.toFixed(1)}%</span>
+                  <span>{routeData.currentProgress?.toFixed(1) || "0"}%</span>
                 </div>
               </div>
             </div>

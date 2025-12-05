@@ -231,11 +231,15 @@ export default function Analytics({ onNavigateToMonitor }: AnalyticsProps) {
 
               <button
                 onClick={async () => {
-                  if (confirm("Clear any residual analytics data?")) {
+                  if (confirm("Clear any residual analytics data from storage?")) {
                     try {
-                      dataManager.clearData("wellnessHistory");
-                      await dataManager.clearAllMongoData();
-                      alert("All analytics data cleared!");
+                      const cleared = await dataManager.clearAnalyticsData();
+                      if (cleared) {
+                        alert("✅ All residual analytics data cleared!");
+                        window.location.reload();
+                      } else {
+                        alert("⚠️ Local data cleared, but MongoDB deletion failed.");
+                      }
                     } catch (error) {
                       console.error("Error clearing data:", error);
                       alert("Error clearing data. Check console for details.");
@@ -244,7 +248,7 @@ export default function Analytics({ onNavigateToMonitor }: AnalyticsProps) {
                 }}
                 className="btn-secondary"
               >
-                Clear Data
+                Clear Residual Data
               </button>
             </div>
           </div>
@@ -548,35 +552,40 @@ export default function Analytics({ onNavigateToMonitor }: AnalyticsProps) {
               onClick={async () => {
                 if (
                   confirm(
-                    "Are you sure you want to clear ALL session data (local + MongoDB)? This cannot be undone."
+                    "⚠️ PERMANENT DELETION\n\nThis will permanently delete ALL analytics data from:\n• Local browser storage\n• MongoDB database\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?"
                   )
                 ) {
                   try {
-                    // Clear local storage
-                    dataManager.clearAllData();
+                    console.log("🗑️ Starting permanent deletion...");
+                    
+                    // Clear analytics data (local + MongoDB)
+                    const cleared = await dataManager.clearAnalyticsData();
 
-                    // Clear MongoDB data
-                    const mongoCleared = await dataManager.clearAllMongoData();
-
-                    if (mongoCleared) {
+                    if (cleared) {
                       setAnalyticsData([]);
+                      console.log("✅ All analytics data permanently deleted");
                       alert(
-                        "All session data cleared successfully (local + MongoDB)!"
+                        "✅ All analytics data permanently deleted!\n\nLocal storage: Cleared\nMongoDB: Cleared\n\nRefresh the page to confirm."
                       );
+                      
+                      // Force refresh after 2 seconds
+                      setTimeout(() => {
+                        window.location.reload();
+                      }, 2000);
                     } else {
                       alert(
-                        "Local data cleared. MongoDB clearing failed - check backend connection."
+                        "⚠️ Partial deletion:\n\nLocal data: Cleared\nMongoDB: Failed (check backend connection)\n\nTry again or check console for errors."
                       );
                     }
                   } catch (error) {
-                    console.error("Error clearing data:", error);
-                    alert("Error clearing data. Check console for details.");
+                    console.error("❌ Error clearing data:", error);
+                    alert("❌ Error clearing data. Check console for details.");
                   }
                 }
               }}
               className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1 rounded font-medium transition-colors"
             >
-              Clear All Sessions
+              🗑️ Permanently Delete All Analytics
             </button>
 
             <button

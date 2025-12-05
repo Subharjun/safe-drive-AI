@@ -100,69 +100,67 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top Navigation */}
-      <nav className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      {/* Professional Top Navigation */}
+      <nav className="glass border-b border-white/20 sticky top-0 z-40 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16 sm:h-18">
             <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">DW</span>
+              <div className="flex-shrink-0 flex items-center space-x-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform">
+                  <span className="text-white font-bold text-lg sm:text-xl">🚗</span>
                 </div>
-                <span className="ml-3 text-xl font-semibold text-gray-900">
-                  Driver Wellness
-                </span>
+                <div>
+                  <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    SafeDrive AI
+                  </span>
+                  <p className="text-xs text-gray-600 hidden sm:block">Intelligent Safety Platform</p>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3 sm:space-x-4">
               <ClientClock />
 
               {/* Session Management Dropdown */}
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+                  className="flex items-center space-x-2 text-gray-700 hover:text-blue-600 transition-all px-3 py-2 rounded-lg hover:bg-white/50 font-medium"
                 >
-                  <span className="text-sm">Session</span>
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
+                  <span className="text-sm hidden sm:inline">Settings</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
 
                 {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50">
-                    <div className="py-1">
+                  <div className="absolute right-0 mt-2 w-56 glass rounded-xl shadow-2xl border border-white/20 z-50 animate-slide-in">
+                    <div className="py-2">
                       <button
                         onClick={() => {
                           exportSessionData();
                           setShowUserMenu(false);
                         }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        className="block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 transition-colors font-medium"
                       >
-                        <span className="mr-2">💾</span>
+                        <span className="mr-3">💾</span>
                         Export All Data
                       </button>
+                      
+                      <div className="border-t border-gray-200 my-2"></div>
                       
                       <button
                         onClick={() => {
                           clearSearchLocations();
                           setShowUserMenu(false);
                         }}
-                        className="block w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 transition-colors"
+                        className="block w-full text-left px-4 py-2.5 text-sm text-orange-600 hover:bg-orange-50 transition-colors font-medium"
                       >
-                        <span className="mr-2">📍</span>
+                        <span className="mr-3">📍</span>
                         Clear Search Locations
                       </button>
                       
@@ -171,31 +169,35 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                           clearMongoSessions();
                           setShowUserMenu(false);
                         }}
-                        className="block w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 transition-colors"
+                        className="block w-full text-left px-4 py-2.5 text-sm text-orange-600 hover:bg-orange-50 transition-colors font-medium"
                       >
-                        <span className="mr-2">📊</span>
+                        <span className="mr-3">📊</span>
                         Clear MongoDB Sessions
                       </button>
+                      
+                      <div className="border-t border-gray-200 my-2"></div>
                       
                       <button
                         onClick={() => {
                           clearSessionData();
                           setShowUserMenu(false);
                         }}
-                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        className="block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors font-medium"
                       >
-                        <span className="mr-2">🗑️</span>
+                        <span className="mr-3">🗑️</span>
                         Clear All Data
                       </button>
-                      <div className="border-t border-gray-100 my-1"></div>
+                      
+                      <div className="border-t border-gray-200 my-2"></div>
+                      
                       <button
                         onClick={() => {
                           window.location.reload();
                           setShowUserMenu(false);
                         }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        className="block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors font-medium"
                       >
-                        <span className="mr-2">🔄</span>
+                        <span className="mr-3">🔄</span>
                         Refresh App
                       </button>
                     </div>
@@ -203,8 +205,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 )}
               </div>
 
-              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-                <span className="text-gray-600 text-sm font-medium">U</span>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform cursor-pointer">
+                <span className="text-white text-sm sm:text-base font-bold">U</span>
               </div>
             </div>
           </div>
@@ -215,15 +217,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       <LiveRouteTracker />
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto py-6 sm:py-8 px-3 sm:px-6 lg:px-8">
         {children}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
-        <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-          <div className="text-center text-sm text-gray-500">
-            © 2024 Driver Wellness Monitor. AI-Enhanced Safety System.
+      {/* Professional Footer */}
+      <footer className="glass border-t border-white/20 mt-12 sm:mt-16">
+        <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0">
+            <div className="text-center sm:text-left">
+              <p className="text-sm font-semibold text-gray-700">
+                © 2024 SafeDrive AI
+              </p>
+              <p className="text-xs text-gray-500">
+                Powered by Blockchain & Artificial Intelligence
+              </p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <span className="badge badge-blue">Celo Blockchain</span>
+              <span className="badge badge-green">AI-Powered</span>
+            </div>
           </div>
         </div>
       </footer>

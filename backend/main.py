@@ -222,23 +222,54 @@ async def process_video_frame(frame_data: str) -> dict:
         current_timestamp = datetime.now().timestamp()
         
         # Use AI-powered analysis (Groq Vision + HF API)
-        drowsiness_score = await analyze_drowsiness(frame, faces[0])
-        stress_level = await analyze_stress(frame, faces[0])
+        drowsiness_result = await analyze_drowsiness(frame, faces[0])
+        stress_result = await analyze_stress(frame, faces[0])
+        
+        # Extract scores (handle both dict and float returns)
+        if isinstance(drowsiness_result, dict):
+            drowsiness_score = drowsiness_result.get('score', 0.2)
+            drowsiness_method = drowsiness_result.get('method', 'Unknown')
+            drowsiness_confidence = drowsiness_result.get('confidence', 'N/A')
+        else:
+            drowsiness_score = drowsiness_result
+            drowsiness_method = 'OpenCV Fallback'
+            drowsiness_confidence = 'N/A'
+            
+        if isinstance(stress_result, dict):
+            stress_level = stress_result.get('score', 0.2)
+            stress_method = stress_result.get('method', 'Unknown')
+            stress_emotion = stress_result.get('emotion', 'neutral')
+            stress_confidence = stress_result.get('confidence', 'N/A')
+        else:
+            stress_level = stress_result
+            stress_method = 'OpenCV Fallback'
+            stress_emotion = 'unknown'
+            stress_confidence = 'N/A'
         
         detailed_metrics = {
             'drowsiness': {
                 'score': drowsiness_score,
                 'level': get_level_description(drowsiness_score, 'drowsiness'),
-                'method': 'AI Vision (Groq) + OpenCV fallback'
+                'method': drowsiness_method,
+                'metrics': {
+                    'Model Prediction': f"{(drowsiness_score * 100):.1f}% drowsy",
+                    'Confidence': stress_confidence,
+                    'Trend': 'Stable'  # Could be enhanced with temporal tracking
+                }
             },
             'stress': {
                 'score': stress_level,
                 'level': get_level_description(stress_level, 'stress'),
-                'method': 'HF Emotion API + Groq Vision fallback'
+                'method': stress_method,
+                'metrics': {
+                    'Primary Emotion': stress_emotion.capitalize(),
+                    'Confidence': stress_confidence,
+                    'Stress Assessment': f"{(stress_level * 100):.1f}% stressed"
+                }
             }
         }
         
-        logging.info(f"🧠 AI Analysis - Drowsiness: {drowsiness_score:.2f} ({detailed_metrics['drowsiness']['level']}), Stress: {stress_level:.2f} ({detailed_metrics['stress']['level']})")
+        logging.info(f"🧠 AI Analysis - Drowsiness: {drowsiness_score:.2f} ({detailed_metrics['drowsiness']['level']}) via {drowsiness_method}, Stress: {stress_level:.2f} ({detailed_metrics['stress']['level']}) via {stress_method}")
         
         # Store data in MongoDB
         await store_monitoring_data({
@@ -264,7 +295,7 @@ async def process_video_frame(frame_data: str) -> dict:
         logging.error(f"Error processing frame: {e}")
         return {"status": "error", "message": str(e)}
 
-async def analyze_drowsiness(frame, face_coords) -> float:
+async def analyze_drowsiness(frame, face_coords):
     """Analyze drowsiness using AI vision models (Groq) with OpenCV fallback"""
     try:
         x, y, w, h = face_coords
@@ -272,10 +303,14 @@ async def analyze_drowsiness(frame, face_coords) -> float:
         
         # Try AI-powered drowsiness detection first
         try:
-            drowsiness_score = await analyze_drowsiness_with_ai(face_roi)
-            if drowsiness_score is not None:
-                logging.info(f"🤖 AI Drowsiness Detection: {drowsiness_score:.2f}")
-                return drowsiness_score
+            ai_result = await analyze_drowsiness_with_ai(face_roi)
+            if ai_result is not None:
+                logging.info(f"🤖 AI Drowsiness Detection: {ai_result:.2f}")
+                return {
+                    'score': ai_result,
+                    'method': 'Groq Vision AI',
+                    'confidence': 'High'
+                }
         except Exception as ai_error:
             logging.warning(f"AI drowsiness detection failed, using OpenCV fallback: {ai_error}")
         
@@ -332,11 +367,19 @@ async def analyze_drowsiness(frame, face_coords) -> float:
         drowsiness_score = max(0.0, min(1.0, drowsiness_score + variation))
         previous_drowsiness = drowsiness_score
         
-        return drowsiness_score
+        return {
+            'score': drowsiness_score,
+            'method': 'OpenCV Computer Vision',
+            'confidence': 'Medium'
+        }
         
     except Exception as e:
         logging.error(f"Error in drowsiness analysis: {e}")
-        return 0.1
+        return {
+            'score': 0.1,
+            'method': 'Error Fallback',
+            'confidence': 'Low'
+        }
 
 async def analyze_drowsiness_with_ai(face_image) -> float:
     """Use Groq Vision AI to detect drowsiness from facial features"""
@@ -459,7 +502,12 @@ async def analyze_stress(frame, face_coords) -> float:
                             max_stress = max(max_stress, current_stress)
                             break
                 
-                return min(max_stress, 1.0)
+                return {
+                    'score': min(max_stress, 1.0),
+                    'method': 'Hugging Face Emotion API',
+                    'emotion': emotion_label,
+                    'confidence': f"{confidence * 100:.0f}%"
+                }
         
         # Fallback: Realistic stress analysis using facial features
         global previous_stress
@@ -512,11 +560,21 @@ async def analyze_stress(frame, face_coords) -> float:
         # Update previous value
         previous_stress = stress_level
         
-        return stress_level
+        return {
+            'score': stress_level,
+            'method': 'OpenCV Facial Features',
+            'emotion': 'neutral',
+            'confidence': 'Medium'
+        }
         
     except Exception as e:
         logging.error(f"Error in stress analysis: {e}")
-        return 0.3  # Return moderate stress on error
+        return {
+            'score': 0.3,
+            'method': 'Error Fallback',
+            'emotion': 'unknown',
+            'confidence': 'Low'
+        }
 
 async def generate_recommendations(drowsiness: float, stress: float) -> List[str]:
     """Generate AI-powered recommendations using Groq with dynamic analysis"""
@@ -885,6 +943,70 @@ async def find_safe_stops(lat: float, lon: float, radius: int = 5000):
         logging.error(f"Safe stops search failed: {e}")
         # Return mock data as fallback
         return {"safe_stops": generate_mock_safe_stops(lat, lon)}
+
+@app.get("/api/rest-stops-serp")
+async def find_rest_stops_serp(origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float):
+    """Find rest stops between origin and destination using SerpAPI"""
+    try:
+        SERPAPI_KEY = os.getenv("SERPAPI_KEY", "2a6735559a92dd065d000665165c6e1f893e0b163f723e5bfab9095a1beb39a2")
+        
+        # Calculate midpoint
+        mid_lat = (origin_lat + dest_lat) / 2
+        mid_lon = (origin_lon + dest_lon) / 2
+        
+        # Search points: start, middle, end
+        search_points = [
+            (origin_lat, origin_lon, "Start"),
+            (mid_lat, mid_lon, "Midpoint"),
+            (dest_lat, dest_lon, "End")
+        ]
+        
+        all_stops = []
+        
+        for lat, lon, position in search_points:
+            try:
+                # SerpAPI Google Maps search
+                url = "https://serpapi.com/search.json"
+                params = {
+                    "engine": "google_maps",
+                    "q": f"gas station OR rest area OR service station",
+                    "ll": f"@{lat},{lon},14z",
+                    "type": "search",
+                    "api_key": SERPAPI_KEY
+                }
+                
+                response = requests.get(url, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    for place in data.get("local_results", [])[:2]:  # Top 2 from each point
+                        gps = place.get("gps_coordinates", {})
+                        place_lat = gps.get("latitude", lat)
+                        place_lon = gps.get("longitude", lon)
+                        
+                        all_stops.append({
+                            "name": place.get("title", "Rest Stop"),
+                            "address": place.get("address", "Address not available"),
+                            "rating": place.get("rating", "N/A"),
+                            "type": place.get("type", "Service Station"),
+                            "position": position,
+                            "coordinates": [place_lon, place_lat],
+                            "link": place.get("link", f"https://www.google.com/maps/search/?api=1&query={place_lat},{place_lon}")
+                        })
+                        
+            except Exception as e:
+                logging.error(f"SerpAPI search error at {position}: {e}")
+                continue
+        
+        if not all_stops:
+            return {"error": "No rest stops found", "stops": []}
+        
+        return {"stops": all_stops, "count": len(all_stops)}
+        
+    except Exception as e:
+        logging.error(f"Rest stops search failed: {e}")
+        return {"error": str(e), "stops": []}
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two points using Haversine formula"""

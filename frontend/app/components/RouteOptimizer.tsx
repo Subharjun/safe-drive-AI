@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import MapView from "./MapView";
 import { config, validateConfig } from "../lib/config";
 import { apiClient } from "../lib/api";
 import { dataManager } from "../lib/dataManager";
@@ -31,18 +30,13 @@ export default function RouteOptimizer() {
     lat: number;
     lon: number;
   } | null>(null);
-  const [nearbyStops, setNearbyStops] = useState<any[]>([]);
-  const [showMap, setShowMap] = useState(false);
-  const [routeCoordinates, setRouteCoordinates] = useState<number[][]>([]);
   const [preferences, setPreferences] = useState<RoutePreferences>({
     maxDrivingTime: config.routing.defaultPreferences.maxDrivingTime,
     preferRestAreas: config.routing.defaultPreferences.preferRestAreas,
     avoidTolls: config.routing.defaultPreferences.avoidTolls,
     prioritizeSafety: config.routing.defaultPreferences.prioritizeSafety,
   });
-  const [recentRoutes, setRecentRoutes] = useState<
-    Array<{ origin: string; destination: string; timestamp: string }>
-  >([]);
+  const [aiRestStops, setAiRestStops] = useState<string>("");
 
   // Get user's current location
   useEffect(() => {
@@ -51,23 +45,14 @@ export default function RouteOptimizer() {
         (position) => {
           const { latitude, longitude } = position.coords;
           setCurrentLocation({ lat: latitude, lon: longitude });
-          fetchNearbySafeStops(latitude, longitude);
         },
         () => {
           console.log("Location access denied, using default location");
-          // Use default location from config
           const { lat: defaultLat, lon: defaultLon } =
             config.map.defaultLocation;
           setCurrentLocation({ lat: defaultLat, lon: defaultLon });
-          fetchNearbySafeStops(defaultLat, defaultLon);
         }
       );
-    }
-
-    // Load recent routes (persists across tabs)
-    const savedRoutes = dataManager.getRecentRoutes();
-    if (savedRoutes.length > 0) {
-      setRecentRoutes(savedRoutes);
     }
 
     // Load saved preferences (persistent)
@@ -77,83 +62,129 @@ export default function RouteOptimizer() {
     }
   }, []);
 
-  const fetchNearbySafeStops = async (lat: number, lon: number) => {
+  const fetchRealRestStops = async (
+    origin: string,
+    destination: string,
+    routeCoordinates: number[][]
+  ) => {
     try {
-      console.log("🔍 Fetching real nearby stops for:", { lat, lon });
-
-      // Use the API client to find real POIs
-      const pois = await apiClient.findNearbyPOIs(lat, lon, 10000); // 10km radius
+      console.log("🔍 Fetching real rest stops via backend...");
       
-      if (pois.length > 0) {
-        const stops = pois.map((poi: any, index: number) => {
-          const props = poi.properties || {};
-          const coords = poi.geometry?.coordinates || [lon, lat];
-          
-          // Determine category and icon based on POI data
-          let category = "Service Station";
-          let icon = "🏪";
-          
-          if (props.category_ids?.includes(142) || props.osm_tags?.amenity === 'fuel') {
-            category = "Gas Station";
-            icon = "⛽";
-          } else if (props.osm_tags?.highway === 'rest_area') {
-            category = "Rest Area";
-            icon = "🛑";
-          } else if (props.osm_tags?.amenity === 'restaurant') {
-            category = "Restaurant";
-            icon = "🍽️";
-          } else if (props.osm_tags?.tourism === 'hotel') {
-            category = "Hotel";
-            icon = "🏨";
-          }
-
-          // Extract amenities from OSM tags
-          const amenities = [];
-          if (props.osm_tags?.fuel || props.category_ids?.includes(142)) amenities.push("Fuel");
-          if (props.osm_tags?.toilets) amenities.push("Restrooms");
-          if (props.osm_tags?.restaurant || props.osm_tags?.fast_food) amenities.push("Food");
-          if (props.osm_tags?.parking) amenities.push("Parking");
-          if (props.osm_tags?.atm) amenities.push("ATM");
-          if (amenities.length === 0) amenities.push("Services Available");
-
-          return {
-            name: props.osm_tags?.name || `${category} #${index + 1}`,
-            category,
-            icon,
-            distance: Math.round(calculateDistance([lon, lat], coords)),
-            coordinates: coords,
-            amenities,
-          };
-        });
-
-        setNearbyStops(stops);
-        console.log(`✅ Found ${stops.length} real nearby stops`);
-      } else {
-        console.log("⚠️ No POIs found, trying alternative search...");
+      if (routeCoordinates.length < 2) {
+        console.error("Not enough route coordinates");
+        await fetchAIFallback(origin, destination);
+        return;
+      }
+      
+      // Get start and end coordinates
+      const [originLon, originLat] = routeCoordinates[0];
+      const [destLon, destLat] = routeCoordinates[routeCoordinates.length - 1];
+      
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const response = await fetch(
+        `${backendUrl}/api/rest-stops-serp?origin_lat=${originLat}&origin_lon=${originLon}&dest_lat=${destLat}&dest_lon=${destLon}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
         
-        // Fallback: Try a broader search with different parameters
-        const fallbackPois = await apiClient.findNearbyPOIs(lat, lon, 20000); // 20km radius
-        
-        if (fallbackPois.length > 0) {
-          const stops = fallbackPois.slice(0, 5).map((poi: any, index: number) => ({
-            name: poi.properties?.osm_tags?.name || `Service Location #${index + 1}`,
-            category: "Service Station",
-            icon: "🏪",
-            distance: Math.round(calculateDistance([lon, lat], poi.geometry?.coordinates || [lon, lat])),
-            coordinates: poi.geometry?.coordinates || [lon, lat],
-            amenities: ["Services Available"],
-          }));
+        if (data.stops && data.stops.length > 0) {
+          // Format the results
+          let formattedStops = "🛑 **Rest Stops Along Your Route**\n\n";
+          formattedStops += `Found ${data.stops.length} rest stops between ${origin} and ${destination}:\n\n`;
           
-          setNearbyStops(stops);
-          console.log(`✅ Found ${stops.length} fallback stops`);
+          data.stops.forEach((stop: any, index: number) => {
+            formattedStops += `**${index + 1}. ${stop.name}**\n`;
+            formattedStops += `📍 ${stop.address}\n`;
+            formattedStops += `📌 Position: ${stop.position}\n`;
+            if (stop.rating !== "N/A") {
+              formattedStops += `⭐ Rating: ${stop.rating}\n`;
+            }
+            formattedStops += `🗺️ [View on Google Maps](${stop.link})\n\n`;
+          });
+          
+          formattedStops += "\n💡 **Safety Tip:** Take a 15-minute break every 2 hours of driving.";
+          
+          console.log(`✅ Found ${data.stops.length} rest stops`);
+          setAiRestStops(formattedStops);
         } else {
-          console.log("❌ No nearby stops found in area");
-          setNearbyStops([]);
+          console.log("⚠️ No stops found, using AI fallback");
+          await fetchAIFallback(origin, destination);
         }
+      } else {
+        console.error("Backend request failed");
+        await fetchAIFallback(origin, destination);
       }
     } catch (error) {
-      console.error("❌ Error fetching nearby stops:", error);
-      setNearbyStops([]);
+      console.error("❌ Error fetching rest stops:", error);
+      await fetchAIFallback(origin, destination);
+    }
+  };
+
+  const fetchAIFallback = async (origin: string, destination: string) => {
+    try {
+      console.log("🤖 Using AI to generate rest stop recommendations...");
+      const groqApiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+      if (!groqApiKey) {
+        setAiRestStops(
+          "⚠️ Unable to load rest stop recommendations. API key missing."
+        );
+        return;
+      }
+
+      const prompt = `You are a helpful driving assistant. A driver is traveling from ${origin} to ${destination}.
+
+Please recommend 4-6 realistic rest stops along this route. For each stop, provide:
+
+**Format each stop like this:**
+**1. [Name of Place]**
+📍 Location: [Approximate distance from start or landmark]
+⛽ Type: [Gas Station/Rest Area/Service Plaza/etc.]
+✨ Amenities: [Fuel, Restrooms, Food, etc.]
+🗺️ [View on Google Maps](https://www.google.com/maps/search/[search term])
+
+Use realistic names like "Shell Gas Station", "Highway Rest Area", "Travel Plaza", etc.
+Make the Google Maps links searchable (e.g., "gas station near [city]" or "rest area [highway name]").
+Be specific and helpful!`;
+
+      console.log("📤 Sending AI request...");
+      const response = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${groqApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "llama3-8b-8192",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.8,
+            max_tokens: 1200,
+          }),
+        }
+      );
+
+      console.log("📥 AI Response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        const recommendation =
+          data.choices[0]?.message?.content || "No recommendations available.";
+        console.log("✅ AI recommendations received successfully");
+        setAiRestStops(recommendation);
+      } else {
+        const errorText = await response.text();
+        console.error("❌ AI API error:", response.status, errorText);
+        setAiRestStops(
+          `⚠️ Unable to fetch recommendations (Error ${response.status}). Please try again.`
+        );
+      }
+    } catch (error) {
+      console.error("❌ AI fallback error:", error);
+      setAiRestStops(
+        "⚠️ Error loading recommendations. Please check your connection."
+      );
     }
   };
 
@@ -196,7 +227,6 @@ export default function RouteOptimizer() {
 
       // Decode the route geometry for map display
       const decodedCoordinates = decodePolyline(route.geometry);
-      setRouteCoordinates(decodedCoordinates);
 
       // Find rest stops along the route (simplified for now)
       const restStops: any[] = [];
@@ -215,25 +245,8 @@ export default function RouteOptimizer() {
       console.log("Route coordinates:", decodedCoordinates.length, "points");
       setRoute(calculatedRoute);
 
-      // Auto-show map when route is calculated
-      setShowMap(true);
-
-      // Save to recent routes
-      const newRoute = {
-        origin,
-        destination,
-        timestamp: new Date().toISOString(),
-      };
-
-      const updatedRoutes = [
-        newRoute,
-        ...recentRoutes.filter(
-          (r) => !(r.origin === origin && r.destination === destination)
-        ),
-      ].slice(0, config.routing.maxRecentRoutes);
-
-      setRecentRoutes(updatedRoutes);
-      dataManager.saveData("recentRoutes", updatedRoutes);
+      // Fetch real rest stops using SerpAPI
+      fetchRealRestStops(origin, destination, decodedCoordinates);
 
       // Save route for live tracking
       const routeForTracking = {
@@ -566,7 +579,6 @@ export default function RouteOptimizer() {
                 setOrigin("");
                 setDestination("");
                 setRoute(null);
-                setRouteCoordinates([]);
                 dataManager.clearData("activeRoute");
               }}
               className="bg-gray-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-600 transition-colors text-sm"
@@ -576,100 +588,10 @@ export default function RouteOptimizer() {
           )}
         </div>
 
-        {/* Recent Routes */}
-        {recentRoutes.length > 0 && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              🕒 Recent Routes
-            </label>
-            <div className="space-y-2">
-              {recentRoutes.slice(0, 3).map((route, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    setOrigin(route.origin);
-                    setDestination(route.destination);
-                  }}
-                  className="w-full text-left p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm">
-                      <div className="font-medium text-gray-900">
-                        {route.origin} → {route.destination}
-                      </div>
-                      <div className="text-gray-500 text-xs">
-                        {new Date(route.timestamp).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <div className="text-blue-600">
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 5l7 7-7 7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="mt-3 text-center text-xs text-gray-500">
           Route will be calculated and live tracking will begin automatically
         </div>
       </div>
-
-      {/* Interactive Map */}
-      {currentLocation && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <span className="mr-2">🗺️</span>
-              Interactive Map & Nearby Safe Stops
-            </h3>
-            <button
-              onClick={() => setShowMap(!showMap)}
-              className="btn-secondary text-sm"
-            >
-              {showMap ? "Hide Map" : "Show Map"}
-            </button>
-          </div>
-
-          {showMap && (
-            <div>
-              {nearbyStops.length === 0 ? (
-                <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
-                    <p className="text-gray-600">
-                      Loading nearby safe stops...
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <MapView
-                  lat={currentLocation.lat}
-                  lon={currentLocation.lon}
-                  safeStops={nearbyStops}
-                  routeCoordinates={routeCoordinates}
-                  onStopSelect={(stop) => {
-                    console.log("Selected stop:", stop);
-                  }}
-                />
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Route Preferences */}
       <div className="card">
@@ -814,40 +736,95 @@ export default function RouteOptimizer() {
             </h3>
 
             <div className="space-y-4">
-              {route.restStops.map((stop, index) => (
-                <div
-                  key={index}
-                  className="border border-gray-200 rounded-lg p-4"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h4 className="font-medium text-gray-900">{stop.name}</h4>
-                    <span className="text-sm text-gray-500">
-                      {stop.distance} km
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {stop.amenities.map(
-                      (amenity: string, amenityIndex: number) => (
-                        <span
-                          key={amenityIndex}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-                        >
-                          {amenity}
-                        </span>
-                      )
-                    )}
-                  </div>
+              {aiRestStops ? (
+                <div className="space-y-3">
+                  {aiRestStops.split('\n\n').map((block, index) => {
+                    // Skip empty blocks
+                    if (!block.trim()) return null;
+                    
+                    // Check if it's a title/header
+                    if (block.startsWith('🛑') || block.startsWith('Found')) {
+                      return (
+                        <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                          <p className="text-base font-bold text-blue-900">{block}</p>
+                        </div>
+                      );
+                    }
+                    
+                    // Check if it's a rest stop entry (starts with **)
+                    if (block.includes('**')) {
+                      const lines = block.split('\n');
+                      const nameMatch = lines[0].match(/\*\*(.+?)\*\*/);
+                      const name = nameMatch ? nameMatch[1] : lines[0];
+                      
+                      // Extract details
+                      const address = lines.find(l => l.includes('📍'))?.replace('📍', '').trim() || '';
+                      const position = lines.find(l => l.includes('📌'))?.replace('📌', '').trim() || '';
+                      const rating = lines.find(l => l.includes('⭐'))?.replace('⭐', '').trim() || '';
+                      const linkMatch = block.match(/\[View on Google Maps\]\((https?:\/\/[^\)]+)\)/);
+                      const link = linkMatch ? linkMatch[1] : '';
+                      
+                      return (
+                        <div key={index} className="card hover:shadow-xl transition-all duration-300 border-l-4 border-blue-500">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h4 className="text-lg font-bold text-gray-900 mb-2">{name}</h4>
+                              {address && (
+                                <p className="text-sm text-gray-600 mb-1">
+                                  <span className="font-semibold">📍</span> {address}
+                                </p>
+                              )}
+                              {position && (
+                                <p className="text-sm text-gray-600 mb-1">
+                                  <span className="font-semibold">📌</span> {position}
+                                </p>
+                              )}
+                              {rating && (
+                                <p className="text-sm text-yellow-600 font-semibold mb-2">
+                                  ⭐ {rating}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          {link && (
+                            <a
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-3 inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-semibold"
+                            >
+                              <span>🗺️</span>
+                              <span>View on Google Maps</span>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          )}
+                        </div>
+                      );
+                    }
+                    
+                    // Safety tip or other text
+                    if (block.includes('💡')) {
+                      return (
+                        <div key={index} className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <p className="text-sm text-green-800 font-medium">{block}</p>
+                        </div>
+                      );
+                    }
+                    
+                    // Default text
+                    return (
+                      <div key={index} className="text-sm text-gray-700">
+                        {block}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-
-              {route.restStops.length === 0 && (
+              ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">🚫</div>
-                  <p>No rest stops found along this route</p>
-                  <p className="text-sm">
-                    Consider planning alternative breaks
-                  </p>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p>Loading recommendations...</p>
                 </div>
               )}
             </div>

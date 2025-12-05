@@ -30,6 +30,7 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [loadingStops, setLoadingStops] = useState(false);
+  const [emergencyMode, setEmergencyMode] = useState(false);
 
   // Generate alerts based on monitoring data
   useEffect(() => {
@@ -37,8 +38,8 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
 
     const newAlerts: Alert[] = [];
 
-    // Drowsiness alerts
-    if (data.drowsiness > 0.8) {
+    // Drowsiness alerts (lowered thresholds for better detection)
+    if (data.drowsiness > 0.7) {
       newAlerts.push({
         id: `drowsiness-${Date.now()}`,
         type: "drowsiness",
@@ -53,7 +54,11 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           "Do not continue driving until fully alert",
         ],
       });
-    } else if (data.drowsiness > 0.6) {
+      // Auto-find safe stops for critical alerts
+      if (currentLocation) {
+        findSafeStops(currentLocation.lat, currentLocation.lon);
+      }
+    } else if (data.drowsiness > 0.5) {
       newAlerts.push({
         id: `drowsiness-${Date.now()}`,
         type: "drowsiness",
@@ -68,10 +73,24 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           "Plan a break at the next safe location",
         ],
       });
+    } else if (data.drowsiness > 0.35) {
+      newAlerts.push({
+        id: `drowsiness-${Date.now()}`,
+        type: "drowsiness",
+        severity: "medium",
+        message: "Moderate drowsiness detected. Stay alert.",
+        timestamp: new Date(),
+        acknowledged: false,
+        recommendations: [
+          "Take a short break if possible",
+          "Stay hydrated",
+          "Adjust your posture",
+        ],
+      });
     }
 
-    // Stress alerts
-    if (data.stress > 0.9) {
+    // Stress alerts (lowered thresholds for better detection)
+    if (data.stress > 0.8) {
       newAlerts.push({
         id: `stress-${Date.now()}`,
         type: "stress",
@@ -86,7 +105,11 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           "Reassess your route and timeline",
         ],
       });
-    } else if (data.stress > 0.7) {
+      // Auto-find safe stops for critical alerts
+      if (currentLocation) {
+        findSafeStops(currentLocation.lat, currentLocation.lon);
+      }
+    } else if (data.stress > 0.6) {
       newAlerts.push({
         id: `stress-${Date.now()}`,
         type: "stress",
@@ -99,6 +122,20 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           "Reduce driving speed if safe to do so",
           "Listen to calming music",
           "Plan a break at the next opportunity",
+        ],
+      });
+    } else if (data.stress > 0.45) {
+      newAlerts.push({
+        id: `stress-${Date.now()}`,
+        type: "stress",
+        severity: "medium",
+        message: "Moderate stress detected. Take it easy.",
+        timestamp: new Date(),
+        acknowledged: false,
+        recommendations: [
+          "Take deep breaths",
+          "Relax your shoulders",
+          "Listen to calming music",
         ],
       });
     }
@@ -152,36 +189,20 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
   const findSafeStops = async (lat: number, lon: number) => {
     setLoadingStops(true);
     try {
-      console.log(`🔍 Searching for real safe stops near ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+      console.log(`🔍 Searching for safe stops near ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
       
-      // Try backend API first
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      const response = await fetch(
-        `/api/safe-stops?lat=${lat}&lon=${lon}&radius=10000`,
-        {
-          signal: controller.signal,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const result = await response.json();
-        const realStops = result.safe_stops || [];
-        setSafeStops(realStops);
-        console.log(`✅ Found ${realStops.length} real safe stops from backend`);
-        return;
-      }
+      // Use the new location service (tries backend, then Groq, then mock)
+      const { locationService } = await import('../lib/locationService');
+      const places = await locationService.findNearbyPlaces(lat, lon, 'safety');
+      
+      setSafeStops(places);
+      console.log(`✅ Found ${places.length} safe stops`);
+      setLoadingStops(false);
     } catch (error) {
-      console.log("❌ Backend API failed, no safe stops available");
+      console.error("❌ Error finding safe stops:", error);
+      setSafeStops([]);
+      setLoadingStops(false);
     }
-
-    // No mock data - if no real data available, show empty state
-    setSafeStops([]);
-    setLoadingStops(false);
   };
 
   const acknowledgeAlert = (alertId: string) => {
@@ -196,31 +217,48 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
     setAlerts((prev) => prev.filter((alert) => alert.id !== alertId));
   };
 
-  const openInMaps = (stop: any) => {
-    const coords = stop.coordinates;
-    if (coords && coords.length >= 2) {
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${coords[1]},${coords[0]}`;
-      window.open(url, "_blank");
-    } else if (stop.name) {
-      // Fallback: search by name
-      const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(
-        stop.name
-      )}`;
-      window.open(searchUrl, "_blank");
-    } else {
-      alert("Unable to open location in maps. Coordinates not available.");
-    }
-  };
+
 
   const handleEmergencyStop = () => {
     if (
       confirm(
-        "Are you sure you want to trigger an emergency stop? This will find the nearest safe location."
+        "🚨 EMERGENCY STOP\n\nThis will:\n• Find nearest safe stops\n• Show them on map\n• Provide directions\n\nContinue?"
       )
     ) {
-      getCurrentLocation();
-      // In a real implementation, this could also alert emergency contacts
-      alert("Emergency mode activated. Finding nearest safe location...");
+      setEmergencyMode(true);
+      setLoadingStops(true);
+      
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            setCurrentLocation({ lat: latitude, lon: longitude });
+            
+            console.log("🚨 EMERGENCY: Finding safe stops...");
+            findSafeStops(latitude, longitude);
+            
+            // Show map automatically
+            setShowMap(true);
+            
+            alert(`✅ Emergency mode activated!\n\nSearching for safe stops near:\nLat: ${latitude.toFixed(4)}\nLon: ${longitude.toFixed(4)}\n\nCheck the "Nearby Safe Stops" section below.`);
+          },
+          (error) => {
+            console.error("❌ Location error:", error);
+            alert(`❌ Could not get your location.\n\nError: ${error.message}\n\nPlease enable location services and try again.`);
+            setLoadingStops(false);
+            setEmergencyMode(false);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      } else {
+        alert("❌ Geolocation not supported by your browser.\n\nPlease use a modern browser with location services.");
+        setLoadingStops(false);
+        setEmergencyMode(false);
+      }
     }
   };
 
@@ -250,8 +288,7 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
 
   const handleShareLocation = () => {
     if (currentLocation) {
-      const locationUrl = `https://www.google.com/maps?q=${currentLocation.lat},${currentLocation.lon}`;
-      const shareText = `🚨 DRIVER EMERGENCY: I need assistance at this location: ${locationUrl}\nCoordinates: ${currentLocation.lat.toFixed(
+      const shareText = `🚨 DRIVER EMERGENCY: I need assistance at this location\nCoordinates: ${currentLocation.lat.toFixed(
         6
       )}, ${currentLocation.lon.toFixed(
         6
@@ -263,7 +300,6 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           .share({
             title: "Emergency Location",
             text: shareText,
-            url: locationUrl,
           })
           .catch(() => {
             // If sharing fails, copy to clipboard
@@ -272,9 +308,6 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
       } else {
         copyToClipboard(shareText);
       }
-
-      // Also open Google Maps in a new tab
-      window.open(locationUrl, "_blank");
     } else {
       alert("❌ Location not available. Please enable location services for emergency features.");
       getCurrentLocation();
@@ -417,17 +450,17 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
           </button>
         </div>
 
-        {!data.isActive ? (
+        {!data.isActive && !emergencyMode ? (
           <div className="text-center py-8 text-gray-500">
             <div className="text-4xl mb-2">⏸️</div>
             <p>Start Live Monitor to enable safety features</p>
-            <p className="text-sm">Safe stops will appear when monitoring is active</p>
+            <p className="text-sm">Or click "Emergency Stop" button below for immediate help</p>
           </div>
-        ) : activeAlerts.length === 0 ? (
+        ) : !emergencyMode && activeAlerts.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <div className="text-4xl mb-2">✅</div>
             <p>No safety alerts - safe stops not needed</p>
-            <p className="text-sm">Safe stops will appear when alerts are active</p>
+            <p className="text-sm">Click "Emergency Stop" if you need immediate assistance</p>
           </div>
         ) : loadingStops ? (
           <div className="text-center py-8 text-gray-500">
@@ -459,17 +492,7 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
                       {currentLocation.lat.toFixed(4)}, {currentLocation.lon.toFixed(4)}
                     </p>
                   </div>
-                  <button
-                    onClick={() =>
-                      window.open(
-                        `https://www.google.com/maps/@${currentLocation.lat},${currentLocation.lon},15z`,
-                        "_blank"
-                      )
-                    }
-                    className="text-xs text-blue-600 hover:text-blue-800"
-                  >
-                    View Current Location
-                  </button>
+
                 </div>
               </div>
             )}
@@ -502,16 +525,10 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
                     </div>
                     <div className="flex flex-col space-y-1">
                       <button
-                        onClick={() => openInMaps(stop)}
-                        className="btn-secondary text-xs"
-                      >
-                        Navigate
-                      </button>
-                      <button
                         onClick={() => {
                           const coords = stop.coordinates;
                           if (coords) {
-                            const shareText = `Safe stop: ${stop.name} at https://www.google.com/maps?q=${coords[1]},${coords[0]}`;
+                            const shareText = `Safe stop: ${stop.name} at coordinates ${coords[1]},${coords[0]}`;
                             navigator.clipboard
                               .writeText(shareText)
                               .then(() => {
@@ -540,9 +557,8 @@ export default function SafetyAlerts({ data }: SafetyAlertsProps) {
                   lon={currentLocation.lon}
                   safeStops={safeStops}
                   onStopSelect={(stop) => {
-                    if (confirm(`Navigate to ${stop.name}?`)) {
-                      openInMaps(stop);
-                    }
+                    // Just show the stop info
+                    alert(`${stop.name}\n${stop.category}\n${(stop.distance / 1000).toFixed(1)} km away`);
                   }}
                 />
               </div>

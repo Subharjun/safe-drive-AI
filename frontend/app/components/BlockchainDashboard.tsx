@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAccount, useDisconnect } from 'wagmi';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { realBlockchainService as blockchainService, SafetyScore, DriverRewards, WellnessLog } from "../lib/realBlockchainService";
 
 interface BlockchainDashboardProps {
@@ -14,6 +16,10 @@ interface BlockchainDashboardProps {
 }
 
 export default function BlockchainDashboard({ currentSafetyMetrics }: BlockchainDashboardProps) {
+  // Wagmi hooks for wallet connection
+  const { address, isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
+  
   const [rewards, setRewards] = useState<DriverRewards>({
     totalEarned: '0',
     totalRedeemed: '0',
@@ -147,11 +153,54 @@ export default function BlockchainDashboard({ currentSafetyMetrics }: Blockchain
     <div className="bg-white rounded-lg shadow-lg p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">🔗 Blockchain Dashboard</h2>
-        <div className="flex items-center space-x-2">
-          <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-          <span className="text-sm text-gray-600">Celo Alfajores</span>
+        <div className="flex items-center space-x-4">
+          {/* Wallet Connection */}
+          {isConnected ? (
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-sm text-gray-600">
+                {address?.slice(0, 6)}...{address?.slice(-4)}
+              </span>
+              <button
+                onClick={() => disconnect()}
+                className="text-xs text-red-600 hover:text-red-700"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <ConnectButton />
+          )}
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="text-sm text-gray-600">Celo Alfajores</span>
+          </div>
         </div>
       </div>
+
+      {/* Wallet Connection Required Message */}
+      {!isConnected && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="flex items-start">
+            <div className="text-2xl mr-3">👛</div>
+            <div>
+              <h3 className="font-semibold text-blue-900 mb-1">Connect Your Wallet</h3>
+              <p className="text-sm text-blue-800 mb-2">
+                Connect your MetaMask or other Web3 wallet to:
+              </p>
+              <ul className="text-sm text-blue-700 space-y-1 ml-4">
+                <li>• Earn SafeDrive Tokens (SDT) for safe driving</li>
+                <li>• Mint achievement NFTs</li>
+                <li>• Redeem rewards for fuel discounts</li>
+                <li>• Track your blockchain-verified driving history</li>
+              </ul>
+              <p className="text-xs text-blue-600 mt-2">
+                💡 Make sure you're on Celo Alfajores testnet
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Current Safety Score */}
       {safetyScore && (

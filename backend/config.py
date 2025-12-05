@@ -6,6 +6,10 @@ All API keys and settings are managed through environment variables
 import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 @dataclass
 class APIConfig:

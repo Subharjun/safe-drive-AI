@@ -55,6 +55,8 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
 
       websocket.onmessage = async (event) => {
         const data = JSON.parse(event.data);
+        console.log("📊 Received analysis:", data);
+        
         if (data.status === "processed") {
           const newData = {
             drowsiness: data.drowsiness_score,
@@ -62,6 +64,11 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
             recommendations: data.recommendations || [],
             detailedMetrics: data.detailed_metrics || {},
           };
+
+          console.log(`🎯 Analysis Results:
+            Drowsiness: ${(data.drowsiness_score * 100).toFixed(1)}% (${data.detailed_metrics?.drowsiness?.level || 'N/A'})
+            Stress: ${(data.stress_level * 100).toFixed(1)}% (${data.detailed_metrics?.stress?.level || 'N/A'})
+            Method: ${data.detailed_metrics?.drowsiness?.method || 'Unknown'}`);
 
           setCurrentData(newData);
 
@@ -126,10 +133,16 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isMonitoring) {
-      interval = setInterval(capture, 2000); // Capture every 2 seconds
+      // Capture every 5 seconds for more accurate AI analysis
+      // This gives Groq Vision and HF API enough time to process
+      interval = setInterval(capture, 5000);
+      console.log("📹 Video monitoring started - capturing every 5 seconds");
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) {
+        clearInterval(interval);
+        console.log("📹 Video monitoring stopped");
+      }
     };
   }, [isMonitoring, capture]);
 

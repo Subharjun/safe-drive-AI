@@ -76,9 +76,7 @@ export default function MapView({
     [onStopSelect]
   );
 
-  const openGoogleMaps = () => {
-    window.open(`https://www.google.com/maps/@${lat},${lon},15z`, "_blank");
-  };
+
 
   // Create custom icons
   const createCustomIcon = (color: string, icon: string) => {
@@ -176,27 +174,19 @@ export default function MapView({
                       {stop.category} • {(stop.distance / 1000).toFixed(1)} km
                       away
                     </div>
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {stop.amenities.map((amenity: string, i: number) => (
-                        <span
-                          key={i}
-                          className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
-                        >
-                          {amenity}
-                        </span>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => {
-                        window.open(
-                          `https://www.google.com/maps/dir/?api=1&destination=${stopLat},${stopLon}`,
-                          "_blank"
-                        );
-                      }}
-                      className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition-colors"
-                    >
-                      🧭 Navigate Here
-                    </button>
+                    {stop.amenities && stop.amenities.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {stop.amenities.map((amenity: string, i: number) => (
+                          <span
+                            key={i}
+                            className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
+                          >
+                            {amenity}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                   </div>
                 </Popup>
               </Marker>
@@ -216,15 +206,7 @@ export default function MapView({
           )}
         </MapContainer>
 
-        {/* Map Controls Overlay */}
-        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
-          <button
-            onClick={openGoogleMaps}
-            className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 transition-colors shadow-md"
-          >
-            🌍 Google Maps
-          </button>
-        </div>
+
 
         {/* Map Info Overlay */}
         <div className="absolute bottom-2 left-2 z-10 bg-white bg-opacity-90 px-2 py-1 rounded text-xs text-gray-700 border border-gray-300">
@@ -279,20 +261,7 @@ export default function MapView({
                 ))}
               </div>
             </div>
-            <button
-              onClick={() => {
-                const coords = selectedStop.coordinates;
-                if (coords && coords.length >= 2) {
-                  window.open(
-                    `https://www.google.com/maps/dir/?api=1&destination=${coords[1]},${coords[0]}`,
-                    "_blank"
-                  );
-                }
-              }}
-              className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition-colors"
-            >
-              Navigate
-            </button>
+
           </div>
         </div>
       )}
