@@ -25,16 +25,25 @@ export default function WellnessMetrics({ data, onNavigateToMonitor }: WellnessM
   }>>([]);
 
   useEffect(() => {
-    // Only load historical data if monitoring is currently active
-    if (data.isActive) {
-      const savedData = dataManager.getWellnessHistory();
-      if (savedData.length > 0) {
-        setHistoricalData(savedData);
+    // Load historical data from MongoDB when monitoring is active
+    const loadHistoricalData = async () => {
+      if (data.isActive) {
+        try {
+          const savedData = await dataManager.getWellnessHistory();
+          if (savedData.length > 0) {
+            setHistoricalData(savedData);
+          }
+        } catch (error) {
+          console.error('Error loading historical data:', error);
+          setHistoricalData([]);
+        }
+      } else {
+        // Clear historical data when monitoring is not active
+        setHistoricalData([]);
       }
-    } else {
-      // Clear historical data when monitoring is not active
-      setHistoricalData([]);
-    }
+    };
+    
+    loadHistoricalData();
   }, [data.isActive]);
 
   useEffect(() => {
@@ -301,9 +310,11 @@ export default function WellnessMetrics({ data, onNavigateToMonitor }: WellnessM
         
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => {
-              dataManager.clearData('wellnessHistory');
-              setHistoricalData([]);
+            onClick={async () => {
+              const success = await dataManager.clearWellnessData();
+              if (success) {
+                setHistoricalData([]);
+              }
             }}
             className="btn-secondary text-sm"
           >
