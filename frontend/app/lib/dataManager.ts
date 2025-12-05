@@ -167,14 +167,14 @@ export class DataManager {
   }
 
   /**
-   * Save route data (persists across tabs)
+   * Save route data (persists across sessions)
    */
   saveRoute(route: any): void {
-    this.saveData('recentRoutes', route, { persistent: false, maxItems: 5 });
+    this.saveData('recentRoutes', route, { persistent: true, maxItems: 5 });
     
     // Also save active route for live tracking
     if (route.coordinates) {
-      this.saveData('activeRoute', route, { persistent: false });
+      this.saveData('activeRoute', route, { persistent: false }); // Active route clears on reload
     }
   }
 
@@ -186,10 +186,10 @@ export class DataManager {
   }
 
   /**
-   * Save wellness data
+   * Save wellness data (persists across sessions)
    */
   saveWellnessData(data: any): void {
-    this.saveData('wellnessHistory', data, { persistent: false, maxItems: 100 });
+    this.saveData('wellnessHistory', data, { persistent: true, maxItems: 100 });
   }
 
   /**
