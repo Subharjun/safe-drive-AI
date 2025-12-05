@@ -948,7 +948,7 @@ async def find_safe_stops(lat: float, lon: float, radius: int = 5000):
 async def find_rest_stops_serp(origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float):
     """Find rest stops between origin and destination using SerpAPI"""
     try:
-        SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+        SERPAPI_KEY = api_config.serpapi_key
         
         if not SERPAPI_KEY:
             return {"error": "SerpAPI key not configured", "stops": []}
