@@ -253,13 +253,23 @@ export default function UnifiedWellnessDashboard({
 
       if (hasHistoricalData) {
         const recentData = history.slice(-50); // Last 50 data points for better analysis
+        // MongoDB returns drowsiness_score and stress_level (0-1 range)
         avgDrowsiness =
-          recentData.reduce((sum, item) => sum + (item.drowsiness || 0), 0) /
-          recentData.length;
+          recentData.reduce(
+            (sum, item) =>
+              sum + (item.drowsiness_score || item.drowsiness || 0),
+            0
+          ) / recentData.length;
         avgStress =
-          recentData.reduce((sum, item) => sum + (item.stress || 0), 0) /
-          recentData.length;
+          recentData.reduce(
+            (sum, item) => sum + (item.stress_level || item.stress || 0),
+            0
+          ) / recentData.length;
         dataPoints = recentData.length;
+
+        console.log(
+          `📊 AI Analysis: ${dataPoints} data points, avg drowsiness: ${avgDrowsiness}, avg stress: ${avgStress}`
+        );
       }
 
       // If monitoring is active, include current data
@@ -284,18 +294,50 @@ export default function UnifiedWellnessDashboard({
         return;
       }
 
-      const prompt = `You are a professional driver wellness AI assistant. Analyze this driver's performance data and provide 3-4 specific, actionable recommendations:
+      const prompt = `You are a professional driver wellness AI assistant analyzing real-time driving performance data. Provide a comprehensive wellness report with 4-5 detailed, actionable recommendations.
 
-📊 Current Metrics:
-- Alertness Level: ${alertnessPercent}%
-- Calmness Level: ${calmnessPercent}%
-- Drowsiness: ${drowsinessPercent}%
-- Stress: ${stressPercent}%
-- Total Sessions: ${totalSessions}
-- Data Points Analyzed: ${dataPoints}
-- Recent Improvement: ${improvement}%
+📊 DRIVER PERFORMANCE METRICS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Alertness Level: ${alertnessPercent}% ${
+        alertnessPercent >= 80
+          ? "(Excellent ✅)"
+          : alertnessPercent >= 60
+          ? "(Good ⚠️)"
+          : "(Needs Attention 🚨)"
+      }
+• Calmness Level: ${calmnessPercent}% ${
+        calmnessPercent >= 80
+          ? "(Very Calm ✅)"
+          : calmnessPercent >= 60
+          ? "(Moderate ⚠️)"
+          : "(Stressed 🚨)"
+      }
+• Drowsiness: ${drowsinessPercent}%
+• Stress: ${stressPercent}%
+• Total Monitoring Sessions: ${totalSessions}
+• Data Points Analyzed: ${dataPoints}
+• Recent Improvement Trend: ${improvement > 0 ? "+" : ""}${improvement}%
 
-Provide personalized, encouraging recommendations to improve their driving wellness and safety. Be specific and actionable. Format as bullet points with emojis.`;
+TASK: Analyze this data and provide a personalized wellness report with:
+
+1. A brief assessment of their current driving wellness state
+2. 4-5 specific, detailed recommendations with:
+   - Clear action items
+   - Why it matters for safety
+   - How to implement it
+   - Expected benefits
+3. Use emojis to make it engaging
+4. Be encouraging and supportive in tone
+5. Focus on practical, immediately actionable advice
+
+Format your response as:
+🚗 Driver Wellness Report: Personalized Recommendations 💡
+
+[Brief assessment paragraph]
+
+[Numbered recommendations with details]
+
+Keep each recommendation substantial (2-3 sentences) but concise.`;
 
       const response = await fetch(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -306,10 +348,10 @@ Provide personalized, encouraging recommendations to improve their driving welln
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "llama3-8b-8192",
+            model: "llama-3.1-8b-instant",
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.7,
-            max_tokens: 500,
+            temperature: 0.8,
+            max_tokens: 1000,
           }),
         }
       );
@@ -323,10 +365,21 @@ Provide personalized, encouraging recommendations to improve their driving welln
         console.log("✅ AI recommendations generated successfully");
       } else {
         const errorText = await response.text();
-        console.error("Groq API error:", response.status, errorText);
-        setAiRecommendations(
-          `⚠️ Unable to generate AI recommendations. API returned: ${response.status}`
-        );
+        console.error("❌ Groq API error:", response.status);
+        console.error("❌ Error details:", errorText);
+
+        // Try to parse error message
+        try {
+          const errorJson = JSON.parse(errorText);
+          console.error("❌ Parsed error:", errorJson);
+          setAiRecommendations(
+            `⚠️ Groq API Error: ${errorJson.error?.message || errorText}`
+          );
+        } catch {
+          setAiRecommendations(
+            `⚠️ Unable to generate AI recommendations. API returned: ${response.status}. Check console for details.`
+          );
+        }
       }
     } catch (error) {
       console.error("Error generating AI recommendations:", error);
@@ -411,59 +464,119 @@ Provide personalized, encouraging recommendations to improve their driving welln
 
   return (
     <div className="space-y-6">
-      {/* Current Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="stat-card stat-card-yellow">
-          <div className="text-4xl font-bold text-yellow-600">
-            {currentScore > 0 ? currentScore : "—"}
-          </div>
-          <div className="text-sm font-medium text-yellow-800 mt-1">
-            Overall Wellness
-          </div>
-          <div className="text-xs text-yellow-600 mt-1">
-            {currentScore === 0
-              ? "No Data"
-              : currentScore >= 80
-              ? "Excellent"
-              : currentScore >= 60
-              ? "Good"
-              : "Needs Attention"}
+      {/* Current Status Cards - Enhanced */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Overall Wellness Card */}
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-yellow-50 to-amber-50 border-2 border-yellow-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-200/30 rounded-full -mr-16 -mt-16"></div>
+          <div className="relative p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-3xl">🏆</span>
+              {currentScore >= 80 && (
+                <span className="px-2 py-1 bg-yellow-200 text-yellow-800 text-xs font-bold rounded-full">
+                  EXCELLENT
+                </span>
+              )}
+            </div>
+            <div className="text-5xl font-bold text-yellow-600 mb-2">
+              {currentScore > 0 ? currentScore : "—"}
+            </div>
+            <div className="text-sm font-semibold text-yellow-900 mb-1">
+              Overall Wellness
+            </div>
+            <div className="flex items-center space-x-1">
+              <div className="flex-1 h-2 bg-yellow-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 transition-all duration-500"
+                  style={{ width: `${currentScore}%` }}
+                ></div>
+              </div>
+              <span className="text-xs font-medium text-yellow-700">
+                {currentScore === 0
+                  ? "No Data"
+                  : currentScore >= 80
+                  ? "Excellent"
+                  : currentScore >= 60
+                  ? "Good"
+                  : "Needs Attention"}
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="stat-card stat-card-blue">
-          <div className="text-4xl font-bold text-blue-600">
-            {currentAlertness > 0 ? `${currentAlertness}%` : "—"}
-          </div>
-          <div className="text-sm font-medium text-blue-800 mt-1">
-            Alertness
-          </div>
-          <div className="text-xs text-blue-600 mt-1">
-            {currentAlertness === 0
-              ? "No Data"
-              : currentAlertness >= 80
-              ? "Highly Alert"
-              : currentAlertness >= 60
-              ? "Moderate"
-              : "Low"}
+        {/* Alertness Card */}
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/30 rounded-full -mr-16 -mt-16"></div>
+          <div className="relative p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-3xl">👁️</span>
+              {currentAlertness >= 80 && (
+                <span className="px-2 py-1 bg-blue-200 text-blue-800 text-xs font-bold rounded-full animate-pulse">
+                  ALERT
+                </span>
+              )}
+            </div>
+            <div className="text-5xl font-bold text-blue-600 mb-2">
+              {currentAlertness > 0 ? `${currentAlertness}%` : "—"}
+            </div>
+            <div className="text-sm font-semibold text-blue-900 mb-1">
+              Alertness Level
+            </div>
+            <div className="flex items-center space-x-1">
+              <div className="flex-1 h-2 bg-blue-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500"
+                  style={{ width: `${currentAlertness}%` }}
+                ></div>
+              </div>
+              <span className="text-xs font-medium text-blue-700">
+                {currentAlertness === 0
+                  ? "No Data"
+                  : currentAlertness >= 80
+                  ? "Highly Alert"
+                  : currentAlertness >= 60
+                  ? "Moderate"
+                  : "Low"}
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="stat-card stat-card-green">
-          <div className="text-4xl font-bold text-purple-600">
-            {currentCalmness > 0 ? `${currentCalmness}%` : "—"}
-          </div>
-          <div className="text-sm font-medium text-purple-800 mt-1">
-            Calmness
-          </div>
-          <div className="text-xs text-purple-600 mt-1">
-            {currentCalmness === 0
-              ? "No Data"
-              : currentCalmness >= 80
-              ? "Very Calm"
-              : currentCalmness >= 60
-              ? "Moderate"
-              : "Stressed"}
+        {/* Calmness Card */}
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-200/30 rounded-full -mr-16 -mt-16"></div>
+          <div className="relative p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-3xl">🧘</span>
+              {currentCalmness >= 80 && (
+                <span className="px-2 py-1 bg-purple-200 text-purple-800 text-xs font-bold rounded-full">
+                  CALM
+                </span>
+              )}
+            </div>
+            <div className="text-5xl font-bold text-purple-600 mb-2">
+              {currentCalmness > 0 ? `${currentCalmness}%` : "—"}
+            </div>
+            <div className="text-sm font-semibold text-purple-900 mb-1">
+              Calmness Level
+            </div>
+            <div className="flex items-center space-x-1">
+              <div className="flex-1 h-2 bg-purple-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-400 to-purple-600 transition-all duration-500"
+                  style={{ width: `${currentCalmness}%` }}
+                ></div>
+              </div>
+              <span className="text-xs font-medium text-purple-700">
+                {currentCalmness === 0
+                  ? "No Data"
+                  : currentCalmness >= 80
+                  ? "Very Calm"
+                  : currentCalmness >= 60
+                  ? "Moderate"
+                  : "Stressed"}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -533,39 +646,85 @@ Provide personalized, encouraging recommendations to improve their driving welln
           </div>
         </div>
 
-        {/* AI Recommendations */}
-        <div className="card bg-gradient-to-br from-purple-50 to-pink-50">
-          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-            <span className="mr-2">💡</span>
-            AI Recommendations
-          </h3>
-          {loadingAI ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-            </div>
-          ) : (
-            <div className="prose prose-sm max-w-none">
-              <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                {aiRecommendations}
+        {/* AI Recommendations - Enhanced */}
+        <div className="relative overflow-hidden rounded-xl shadow-lg border-2 border-purple-200 bg-gradient-to-br from-purple-50 via-pink-50 to-purple-50">
+          {/* Animated background gradient */}
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-400/10 via-pink-400/10 to-purple-400/10 animate-pulse"></div>
+
+          <div className="relative p-6">
+            {/* Header with badge */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg">
+                  <span className="text-2xl">💡</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    AI Recommendations
+                  </h3>
+                  <p className="text-xs text-purple-600 font-medium">
+                    Powered by Groq LLaMA 3.1
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-4">
-                <button
-                  onClick={generateAIRecommendations}
-                  className="text-sm text-purple-600 hover:text-purple-800 font-medium"
-                >
-                  🔄 Refresh Recommendations
-                </button>
-                {sessions.length > 0 && (
+              <div className="px-3 py-1 rounded-full bg-purple-100 border border-purple-300">
+                <span className="text-xs font-semibold text-purple-700">
+                  ✨ AI-Powered
+                </span>
+              </div>
+            </div>
+
+            {loadingAI ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="relative">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-200"></div>
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-purple-600 absolute top-0"></div>
+                </div>
+                <p className="mt-4 text-sm text-purple-600 font-medium animate-pulse">
+                  Analyzing your wellness data...
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Recommendations content with better formatting */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-lg p-4 border border-purple-100 shadow-sm">
+                  <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+                    {aiRecommendations}
+                  </div>
+                </div>
+
+                {/* Action buttons with better styling */}
+                <div className="flex items-center justify-between pt-2 border-t border-purple-200">
                   <button
-                    onClick={clearAllData}
-                    className="text-sm text-red-600 hover:text-red-800 font-medium"
+                    onClick={generateAIRecommendations}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium text-sm shadow-md hover:shadow-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-200 transform hover:scale-105"
                   >
-                    🗑️ Clear All Data
+                    <span>🔄</span>
+                    <span>Refresh Recommendations</span>
                   </button>
-                )}
+                  {sessions.length > 0 && (
+                    <button
+                      onClick={clearAllData}
+                      className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-red-50 text-red-600 font-medium text-sm border border-red-200 hover:bg-red-100 hover:border-red-300 transition-all duration-200"
+                    >
+                      <span>🗑️</span>
+                      <span>Clear All Data</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Info footer */}
+                <div className="flex items-center space-x-2 text-xs text-purple-600 bg-purple-50 rounded-lg p-3 border border-purple-100">
+                  <span>ℹ️</span>
+                  <span>
+                    Recommendations are personalized based on your{" "}
+                    {sessions.length} session{sessions.length !== 1 ? "s" : ""}{" "}
+                    and real-time wellness data.
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
