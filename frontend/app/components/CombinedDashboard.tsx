@@ -7,6 +7,12 @@ interface MonitoringData {
   stress: number;
   isActive: boolean;
   lastUpdate: Date | null;
+  interventionCount: number;
+  drivingDuration: number;
+  detailedMetrics?: {
+    drowsiness?: any;
+    stress?: any;
+  };
 }
 
 interface CombinedDashboardProps {

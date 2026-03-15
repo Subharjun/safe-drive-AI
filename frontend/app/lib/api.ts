@@ -50,8 +50,16 @@ export class APIClient {
 
         // If it's the last retry or a client error, throw
         if (i === retries - 1 || response.status < 500) {
+          let errorDetail = "";
+          try {
+            const errorData = await response.json();
+            errorDetail = errorData.error?.message || errorData.message || JSON.stringify(errorData);
+          } catch (e) {
+            errorDetail = response.statusText;
+          }
+
           throw new APIError(
-            `HTTP ${response.status}: ${response.statusText}`,
+            `HTTP ${response.status}${errorDetail ? ': ' + errorDetail : ''}`,
             response.status
           );
         }
@@ -122,7 +130,7 @@ export class APIClient {
     origin: [number, number],
     destination: [number, number],
     preferences: any = {}
-  ): Promise<any> {
+  ): Promise<any[]> {
     try {
       const response = await this.fetchWithRetry(
         getApiUrl.orsDirections(),
@@ -137,7 +145,10 @@ export class APIClient {
             coordinates: [origin, destination],
             format: 'json',
             instructions: true,
-            preference: preferences.prioritizeSafety ? 'recommended' : 'fastest',
+            alternative_routes: {
+              target_count: 3
+            },
+            preference: 'fastest',
             options: preferences.avoidTolls ? { avoid_features: ['tollways'] } : {},
           }),
         }
@@ -149,12 +160,10 @@ export class APIClient {
         throw new APIError('No routes found between these locations');
       }
 
-      return data.routes[0];
-    } catch (error) {
-      throw new APIError(
-        `Route calculation failed: ${error}`,
-        undefined,
-        'OpenRouteService'
+      return data.routes;
+    } catch (error: any) {
+      throw new Error(
+        error.message || 'Route calculation failed'
       );
     }
   }

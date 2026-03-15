@@ -16,6 +16,11 @@ module.exports = {
     },
   },
   networks: {
+    sepolia: {
+      url: "https://forno.celo-sepolia.celo-testnet.org",
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+      chainId: 11142220,
+    },
     alfajores: {
       url: "https://alfajores-forno.celo-testnet.org",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],

@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 let CONTRACT_ADDRESSES: any = {
   SAFE_DRIVING_TOKEN: "",
   DRIVER_WELLNESS_NFT: "",
-  NETWORK: "alfajores",
-  CHAIN_ID: 44787,
+  NETWORK: "sepolia",
+  CHAIN_ID: 11142220,
   DEPLOYER: ""
 };
 
@@ -95,7 +95,7 @@ class RealBlockchainService {
     try {
       // Initialize provider
       this.provider = new ethers.JsonRpcProvider(
-        process.env.NEXT_PUBLIC_CELO_RPC_URL || 'https://alfajores-forno.celo-testnet.org'
+        process.env.NEXT_PUBLIC_CELO_RPC_URL || 'https://forno.celo-sepolia.celo-testnet.org'
       );
 
       // Initialize wallet
@@ -143,26 +143,51 @@ class RealBlockchainService {
     routeCompliance: number;
     drivingDuration: number;
   }): SafetyScore {
-    // Weighted scoring algorithm
-    const drowsinessScore = Math.max(0, 100 - (metrics.drowsinessLevel * 20));
-    const stressScore = Math.max(0, 100 - (metrics.stressLevel * 15));
-    const interventionPenalty = Math.min(30, metrics.interventionCount * 5);
+    // Weighted scoring algorithm - metrics are expected in 0.0 to 1.0 range
+    // 100 is best, 0 is worst
+    const drowsinessScore = Math.max(0, 100 - (metrics.drowsinessLevel * 100));
+    const stressScore = Math.max(0, 100 - (metrics.stressLevel * 100));
+    
+    // Penalize interventions heavily
+    const interventionPenalty = Math.min(50, metrics.interventionCount * 10);
+    
+    // Route compliance is already 0-100
     const routeScore = metrics.routeCompliance;
 
     const overallScore = Math.round(
-      (drowsinessScore * 0.3) +
+      (drowsinessScore * 0.35) +
       (stressScore * 0.25) +
-      (routeScore * 0.25) +
-      (Math.max(0, 100 - interventionPenalty) * 0.2)
+      (routeScore * 0.20) +
+      (Math.max(0, 100 - interventionPenalty) * 0.20)
     );
 
     return {
-      drowsinessScore,
-      stressScore,
+      drowsinessScore: Math.round(drowsinessScore),
+      stressScore: Math.round(stressScore),
       interventionCount: metrics.interventionCount,
-      routeCompliance: routeScore,
+      routeCompliance: Math.round(routeScore),
       overallScore: Math.min(100, Math.max(0, overallScore))
     };
+  }
+
+  // Register driver on blockchain
+  async registerDriver(): Promise<{ success: boolean; transactionHash?: string; error?: string }> {
+    try {
+      if (!this.areContractsReady()) {
+        const status = this.getDeploymentStatus();
+        return { success: false, error: status.message };
+      }
+
+      console.log('📝 Registering driver on blockchain...');
+      const tx = await this.safeDrivingToken!.registerDriver(this.driverAddress);
+      const receipt = await tx.wait();
+
+      console.log('✅ Driver registered successfully!');
+      return { success: true, transactionHash: receipt.transactionHash };
+    } catch (error) {
+      console.error('❌ Error registering driver:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }
 
   // Record wellness data on blockchain

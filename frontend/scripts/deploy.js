@@ -1,9 +1,12 @@
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
 const fs = require('fs');
 const path = require('path');
 
 async function main() {
-  console.log("🚀 Deploying contracts to Celo Alfajores...");
+  const networkName = hre.network.name;
+  const chainId = hre.network.config.chainId;
+  
+  console.log(`🚀 Deploying contracts to Celo ${networkName}...`);
 
   // Get the deployer account
   const signers = await ethers.getSigners();
@@ -20,7 +23,8 @@ async function main() {
 
   if (balance === 0n) {
     console.log("❌ Insufficient balance. Please fund your account with CELO tokens.");
-    console.log("🔗 Get testnet CELO from: https://faucet.celo.org/alfajores");
+    const faucetUrl = networkName === "sepolia" ? "https://faucet.celo.org/sepolia" : "https://faucet.celo.org/alfajores";
+    console.log(`🔗 Get testnet CELO from: ${faucetUrl}`);
     return;
   }
 
@@ -59,8 +63,8 @@ async function main() {
     const contractAddresses = `export const CONTRACT_ADDRESSES = {
   SAFE_DRIVING_TOKEN: "${safeDrivingTokenAddress}",
   DRIVER_WELLNESS_NFT: "${driverWellnessNFTAddress}",
-  NETWORK: "alfajores",
-  CHAIN_ID: 44787,
+  NETWORK: "${networkName}",
+  CHAIN_ID: ${chainId},
   DEPLOYER: "${deployer.address}"
 };
 
@@ -97,9 +101,10 @@ export const DRIVER_WELLNESS_NFT_ABI = [
     console.log("📋 Contract Addresses:");
     console.log("SafeDrivingToken:", safeDrivingTokenAddress);
     console.log("DriverWellnessNFT:", driverWellnessNFTAddress);
+    const explorerBase = networkName === "sepolia" ? "https://explorer.celo.org/sepolia" : "https://explorer.celo.org/alfajores";
     console.log("\n🔗 View on Celo Explorer:");
-    console.log(`https://explorer.celo.org/alfajores/address/${safeDrivingTokenAddress}`);
-    console.log(`https://explorer.celo.org/alfajores/address/${driverWellnessNFTAddress}`);
+    console.log(`${explorerBase}/address/${safeDrivingTokenAddress}`);
+    console.log(`${explorerBase}/address/${driverWellnessNFTAddress}`);
     
     console.log("\n📱 Next Steps:");
     console.log("1. Update your .env.local with the contract addresses");

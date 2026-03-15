@@ -70,8 +70,30 @@ export default function BlockchainDashboard({ currentSafetyMetrics }: Blockchain
     }
   };
 
+  const handleRegister = async () => {
+    setIsLoading(true);
+    try {
+      const result = await blockchainService.registerDriver();
+      if (result.success) {
+        alert("Success! You are now a registered SafeDrive driver.");
+        await loadBlockchainData();
+      } else {
+        alert(`Registration failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error during registration:', error);
+      alert('Error during registration');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRecordSession = async () => {
     if (!currentSafetyMetrics || !safetyScore) return;
+    if (!rewards.isActive) {
+      alert("Please register your driver profile first!");
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -92,9 +114,9 @@ export default function BlockchainDashboard({ currentSafetyMetrics }: Blockchain
         );
 
         if (rewardResult.success) {
-          alert(`Session recorded! Earned ${rewardResult.rewardAmount} SDT tokens`);
+          alert(`✅ Session recorded! Earned ${rewardResult.rewardAmount} SDT tokens.`);
         } else {
-          alert(`Session recorded but no rewards: ${rewardResult.error}`);
+          alert(`Session recorded successfully! (No tokens earned for this score)`);
         }
 
         // Reload data
@@ -173,7 +195,7 @@ export default function BlockchainDashboard({ currentSafetyMetrics }: Blockchain
           )}
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-            <span className="text-sm text-gray-600">Celo Alfajores</span>
+            <span className="text-sm text-gray-600">Celo Sepolia</span>
           </div>
         </div>
       </div>
@@ -202,43 +224,107 @@ export default function BlockchainDashboard({ currentSafetyMetrics }: Blockchain
         </div>
       )}
 
+      {/* Registration Section */}
+      {!isLoading && !rewards.isActive && (
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg p-6 mb-6">
+          <div className="flex items-center space-x-4">
+            <div className="text-4xl">🆔</div>
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-orange-900">Driver Registration Required</h3>
+              <p className="text-sm text-orange-800">
+                You need to register your wallet address on the blockchain to start earning SDT tokens and recording logs.
+              </p>
+            </div>
+            <button
+              onClick={handleRegister}
+              disabled={isLoading}
+              className="px-6 py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 shadow-lg transition-all animate-bounce-short"
+            >
+              🚀 Register Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Driver Status Card */}
+      <div className={`rounded-xl p-4 mb-6 border ${rewards.isActive ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className={`p-2 rounded-full ${rewards.isActive ? 'bg-green-500' : 'bg-gray-400'}`}>
+              <span className="text-white">👤</span>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Driver Status</p>
+              <p className={`text-xs ${rewards.isActive ? 'text-green-600 font-bold' : 'text-gray-500'}`}>
+                {rewards.isActive ? 'Verified SafeDriver' : 'Not Registered'}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-medium text-gray-900">Last Verified</p>
+            <p className="text-xs text-gray-500">
+              {rewards.lastUpdate > 0 ? new Date(rewards.lastUpdate).toLocaleString() : 'Never'}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Current Safety Score */}
-      {safetyScore && (
-        <div className={`rounded-lg p-4 mb-6 ${getScoreBgColor(safetyScore.overallScore)}`}>
+      {safetyScore ? (
+        <div className={`rounded-lg p-4 mb-6 ${getScoreBgColor(safetyScore.overallScore)} border border-white/50 shadow-sm`}>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold text-gray-900">Current Safety Score</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Session Performance</h3>
             <span className={`text-2xl font-bold ${getScoreColor(safetyScore.overallScore)}`}>
               {safetyScore.overallScore}%
             </span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600">Alertness:</span>
-              <span className="ml-2 font-medium">{safetyScore.drowsinessScore}%</span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+            <div className="bg-white/40 p-2 rounded">
+              <span className="text-gray-600 block text-xs">Alertness</span>
+              <span className="font-bold">{safetyScore.drowsinessScore}%</span>
             </div>
-            <div>
-              <span className="text-gray-600">Stress:</span>
-              <span className="ml-2 font-medium">{safetyScore.stressScore}%</span>
+            <div className="bg-white/40 p-2 rounded">
+              <span className="text-gray-600 block text-xs">Stress Control</span>
+              <span className="font-bold">{safetyScore.stressScore}%</span>
             </div>
-            <div>
-              <span className="text-gray-600">Route:</span>
-              <span className="ml-2 font-medium">{safetyScore.routeCompliance}%</span>
+            <div className="bg-white/40 p-2 rounded">
+              <span className="text-gray-600 block text-xs">Route Accuracy</span>
+              <span className="font-bold">{safetyScore.routeCompliance}%</span>
             </div>
-            <div>
-              <span className="text-gray-600">Interventions:</span>
-              <span className="ml-2 font-medium">{safetyScore.interventionCount}</span>
+            <div className="bg-white/40 p-2 rounded">
+              <span className="text-gray-600 block text-xs">Interventions</span>
+              <span className="font-bold">{safetyScore.interventionCount}</span>
             </div>
           </div>
           
-          {currentSafetyMetrics && (
-            <button
-              onClick={handleRecordSession}
-              disabled={isLoading}
-              className="mt-4 w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {isLoading ? 'Recording...' : '📝 Record Driving Session'}
-            </button>
+          <button
+            onClick={handleRecordSession}
+            disabled={isLoading || !rewards.isActive}
+            className={`w-full py-3 rounded-xl font-bold text-white transition-all shadow-md active:scale-95 ${
+              rewards.isActive 
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-lg' 
+                : 'bg-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <span>Processing Transaction...</span>
+              </div>
+            ) : (
+              '📝 Record Session to Celo Blockchain'
+            )}
+          </button>
+          {!rewards.isActive && (
+            <p className="text-center text-xs text-red-600 mt-2 font-medium">
+              ⚠️ Register your profile above to record sessions and earn tokens.
+            </p>
           )}
+        </div>
+      ) : (
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-8 mb-6 text-center">
+          <p className="text-gray-500 mb-2">No active driving data found</p>
+          <p className="text-xs text-gray-400">Start live monitoring to generate safety scores and earn rewards</p>
         </div>
       )}
 

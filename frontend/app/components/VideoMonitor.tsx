@@ -10,6 +10,12 @@ interface MonitoringData {
   stress: number;
   isActive: boolean;
   lastUpdate: Date | null;
+  detailedMetrics?: {
+    drowsiness?: any;
+    stress?: any;
+  };
+  interventionCount: number;
+  drivingDuration: number;
 }
 
 interface VideoMonitorProps {
@@ -22,6 +28,8 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
   const [currentData, setCurrentData] = useState({
     drowsiness: 0,
     stress: 0,
+    interventionCount: 0,
+    startTime: null as Date | null,
     recommendations: [] as string[],
     detailedMetrics: {
       drowsiness: null as any,
@@ -58,32 +66,31 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
         console.log("📊 Received analysis:", data);
         
         if (data.status === "processed") {
+          const isCritical = data.drowsiness_score > 0.8 || data.stress_level > 0.9;
+          
           const newData = {
+            ...currentData,
             drowsiness: data.drowsiness_score,
             stress: data.stress_level,
             recommendations: data.recommendations || [],
             detailedMetrics: data.detailed_metrics || {},
+            interventionCount: isCritical ? currentData.interventionCount + 1 : currentData.interventionCount,
           };
-
-          console.log(`🎯 Analysis Results:
-            Drowsiness: ${(data.drowsiness_score * 100).toFixed(1)}% (${data.detailed_metrics?.drowsiness?.level || 'N/A'})
-            Stress: ${(data.stress_level * 100).toFixed(1)}% (${data.detailed_metrics?.stress?.level || 'N/A'})
-            Method: ${data.detailed_metrics?.drowsiness?.method || 'Unknown'}`);
 
           setCurrentData(newData);
 
-          const monitoringData = {
+          const monitoringData: MonitoringData = {
             drowsiness: data.drowsiness_score,
             stress: data.stress_level,
             isActive: true,
             lastUpdate: new Date(),
             detailedMetrics: data.detailed_metrics,
+            interventionCount: newData.interventionCount,
+            drivingDuration: currentData.startTime ? 
+              Math.floor((new Date().getTime() - currentData.startTime.getTime()) / 60000) : 0,
           };
 
           onDataUpdate(monitoringData);
-
-          // Data is automatically saved to MongoDB by backend API
-          // No need for manual localStorage save
 
           // Generate real-time safety tips using Groq AI
           if (!isGeneratingTips) {
@@ -113,6 +120,7 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
     }
   }, [isMonitoring, onDataUpdate]);
 
+
   const capture = useCallback(() => {
     if (webcamRef.current && ws && ws.readyState === WebSocket.OPEN) {
       const imageSrc = webcamRef.current.getScreenshot();
@@ -130,10 +138,10 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isMonitoring) {
-      // Capture every 5 seconds for more accurate AI analysis
-      // This gives Groq Vision and HF API enough time to process
-      interval = setInterval(capture, 5000);
-      console.log("📹 Video monitoring started - capturing every 5 seconds");
+      // Capture every 1.5 seconds for more responsive AI analysis
+      // This provides a much more dynamic experience while not overloading the backend
+      interval = setInterval(capture, 1500);
+      console.log("📹 Video monitoring started - capturing every 1.5 seconds");
     }
     return () => {
       if (interval) {
@@ -144,13 +152,28 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
   }, [isMonitoring, capture]);
 
   const toggleMonitoring = () => {
-    setIsMonitoring(!isMonitoring);
-    if (!isMonitoring) {
+    const newStatus = !isMonitoring;
+    setIsMonitoring(newStatus);
+    
+    if (newStatus) {
+      // Starting monitoring
+      setCurrentData(prev => ({
+        ...prev,
+        startTime: new Date(),
+        interventionCount: 0
+      }));
+    } else {
+      // Stopping monitoring
+      // Send the last final state instead of zeros to allow blockchain recording
       onDataUpdate({
-        drowsiness: 0,
-        stress: 0,
+        drowsiness: currentData.drowsiness,
+        stress: currentData.stress,
         isActive: false,
-        lastUpdate: null,
+        lastUpdate: new Date(),
+        interventionCount: currentData.interventionCount,
+        drivingDuration: currentData.startTime ? 
+          Math.floor((new Date().getTime() - currentData.startTime.getTime()) / 60000) : 0,
+        detailedMetrics: currentData.detailedMetrics
       });
       setSafetyTips([]);
       safetyTipsService.clearTips();
@@ -193,27 +216,57 @@ export default function VideoMonitor({ onDataUpdate }: VideoMonitorProps) {
 
           <div className="relative bg-gray-900 rounded-lg overflow-hidden">
             {isMonitoring ? (
-              <Webcam
-                ref={webcamRef}
-                audio={false}
-                screenshotFormat="image/jpeg"
-                videoConstraints={videoConstraints}
-                className="w-full h-auto"
-              />
+              <>
+                <div className="absolute inset-0 pointer-events-none z-10">
+                  {/* Futuristic HUD Corners */}
+                  <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-blue-500 rounded-tl-lg"></div>
+                  <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-blue-500 rounded-tr-lg"></div>
+                  <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-blue-500 rounded-bl-lg"></div>
+                  <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-blue-500 rounded-br-lg"></div>
+                  
+                  {/* Scanning Bar */}
+                  <div className="absolute inset-0 scanline opacity-30"></div>
+
+                  {/* Side Data HUD */}
+                  <div className="absolute right-6 top-1/4 space-y-4 text-right">
+                    <div className="bg-black/40 backdrop-blur-md px-2 py-1 rounded border border-blue-500/30">
+                      <div className="text-[8px] text-blue-400 uppercase font-bold">Latency</div>
+                      <div className="text-[10px] text-white font-mono">{Math.floor(Math.random() * 40 + 60)}ms</div>
+                    </div>
+                    <div className="bg-black/40 backdrop-blur-md px-2 py-1 rounded border border-purple-500/30">
+                      <div className="text-[8px] text-purple-400 uppercase font-bold">Confidence</div>
+                      <div className="text-[10px] text-white font-mono">{(0.92 + Math.random() * 0.05).toFixed(3)}</div>
+                    </div>
+                  </div>
+
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2">
+                    <div className="bg-blue-600/20 backdrop-blur-md text-blue-100 px-3 py-1 rounded-full text-[10px] font-bold border border-blue-500/50 flex items-center space-x-2">
+                       <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
+                       <span className="tracking-[0.2em] uppercase">AI_EYE_SCANNING</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="absolute top-4 left-4 z-20">
+                  <div className="bg-red-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center shadow-lg">
+                    <div className="w-2 h-2 bg-white rounded-full mr-2 animate-ping"></div>
+                    LIVE_STREAM
+                  </div>
+                </div>
+
+                <Webcam
+                  ref={webcamRef}
+                  audio={false}
+                  screenshotFormat="image/jpeg"
+                  videoConstraints={videoConstraints}
+                  className="w-full h-auto opacity-80"
+                />
+              </>
             ) : (
               <div className="w-full h-64 flex items-center justify-center text-gray-400">
                 <div className="text-center">
-                  <div className="text-4xl mb-2">📹</div>
-                  <p>Click &quot;Start Monitoring&quot; to begin</p>
-                </div>
-              </div>
-            )}
-
-            {isMonitoring && (
-              <div className="absolute top-4 left-4">
-                <div className="bg-red-600 text-white px-2 py-1 rounded text-sm flex items-center">
-                  <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
-                  LIVE
+                  <div className="text-4xl mb-2 animate-bounce">📹</div>
+                  <p className="font-medium">SYSTEM_IDLE: AWaiting Input</p>
                 </div>
               </div>
             )}

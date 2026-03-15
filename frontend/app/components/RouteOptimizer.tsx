@@ -1,17 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { config, validateConfig } from "../lib/config";
 import { apiClient } from "../lib/api";
 import { dataManager } from "../lib/dataManager";
+import MapView from "./MapView";
 
 // Removed unused interface RoutePoint
+
+interface RouteStep {
+  instruction: string;
+  distance: number;
+  duration: number;
+  name: string;
+}
 
 interface RouteSegment {
   distance: number;
   duration: number;
-  instructions: string[];
+  instructions: string[]; // Keep for compatibility
+  steps: RouteStep[];
   restStops: any[];
+  geometry: string;
+  decodedCoordinates: number[][];
+  mainRoad?: string;
+  majorRoads: string[];
 }
 
 interface RoutePreferences {
@@ -21,15 +34,61 @@ interface RoutePreferences {
   prioritizeSafety: boolean;
 }
 
+const formatDuration = (minutes: number | null) => {
+  if (minutes === null) return "--";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+};
+
+const calculateDistance = (coord1: number[], coord2: number[]) => {
+  const R = 6371000; // Earth's radius in meters
+  const lat1Rad = (coord1[1] * Math.PI) / 180;
+  const lat2Rad = (coord2[1] * Math.PI) / 180;
+  const deltaLat = ((coord2[1] - coord1[1]) * Math.PI) / 180;
+  const deltaLng = ((coord2[0] - coord1[0]) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1Rad) *
+      Math.cos(lat2Rad) *
+      Math.sin(deltaLng / 2) *
+      Math.sin(deltaLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+};
+
+const getAmenitiesFromPOI = (properties: any) => {
+  const amenities: string[] = [];
+  const tags = properties.osm_tags || {};
+
+  if (tags.fuel || properties.category_ids?.includes(142))
+    amenities.push("Fuel");
+  if (tags.toilets || tags.restroom) amenities.push("Restrooms");
+  if (tags.restaurant || tags.fast_food || tags.cafe) amenities.push("Food");
+  if (tags.parking) amenities.push("Parking");
+  if (tags.atm) amenities.push("ATM");
+  if (tags.shower) amenities.push("Showers");
+
+  return amenities.length > 0 ? amenities : ["Services Available"];
+};
+
 export default function RouteOptimizer() {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
-  const [route, setRoute] = useState<RouteSegment | null>(null);
+  const [allRoutes, setAllRoutes] = useState<RouteSegment[]>([]);
+  const [activeRouteIndex, setActiveRouteIndex] = useState(0);
+  const [remainingDistance, setRemainingDistance] = useState<number | null>(null);
+  const [remainingDuration, setRemainingDuration] = useState<number | null>(null);
+  const [currentRoadName, setCurrentRoadName] = useState<string | null>(null);
+  const [nextStepIndex, setNextStepIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{
     lat: number;
     lon: number;
   } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
   const [preferences, setPreferences] = useState<RoutePreferences>({
     maxDrivingTime: config.routing.defaultPreferences.maxDrivingTime,
     preferRestAreas: config.routing.defaultPreferences.preferRestAreas,
@@ -37,14 +96,23 @@ export default function RouteOptimizer() {
     prioritizeSafety: config.routing.defaultPreferences.prioritizeSafety,
   });
   const [aiRestStops, setAiRestStops] = useState<string>("");
+  const [mapSafeStops, setMapSafeStops] = useState<any[]>([]);
 
-  // Get user's current location
+  const activeRoute = allRoutes[activeRouteIndex] || null;
+  const routeCoordinates = activeRoute?.decodedCoordinates || [];
+
+  // Get user's current location and start watching
   useEffect(() => {
     if (navigator.geolocation) {
+      // Get initial position
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
           setCurrentLocation({ lat: latitude, lon: longitude });
+          // If no origin, set it to current location
+          if (!origin) {
+            setOrigin(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+          }
         },
         () => {
           console.log("Location access denied, using default location");
@@ -53,9 +121,79 @@ export default function RouteOptimizer() {
           setCurrentLocation({ lat: defaultLat, lon: defaultLon });
         }
       );
+
+      // Start watching position
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          console.log("📍 Location updated:", latitude, longitude);
+          setCurrentLocation({ lat: latitude, lon: longitude });
+        },
+        (error) => console.log("Error watching position:", error),
+        { enableHighAccuracy: true, maximumAge: 10000 }
+      );
     }
 
-    // Load saved preferences (persistent)
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
+
+  // Update progress-based metrics when location or route changes
+  useEffect(() => {
+    if (currentLocation && activeRoute && routeCoordinates.length > 0) {
+      // Find closest point on route to avoid "jumping"
+      let minDistance = Infinity;
+      let closestIndex = 0;
+
+      routeCoordinates.forEach((coord, index) => {
+        const d = calculateDistance(
+          [currentLocation.lon, currentLocation.lat],
+          coord
+        );
+        if (d < minDistance) {
+          minDistance = d;
+          closestIndex = index;
+        }
+      });
+
+      // Calculate path distance remaining along the polyline
+      let remainingDist = 0;
+      for (let i = closestIndex; i < routeCoordinates.length - 1; i++) {
+        remainingDist += calculateDistance(
+          routeCoordinates[i],
+          routeCoordinates[i + 1]
+        );
+      }
+      
+      const distKm = Math.round((remainingDist / 1000) * 10) / 10;
+      setRemainingDistance(distKm);
+
+      // Estimate remaining time more accurately
+      // Ensure we don't go below 1 min if we're not at destination
+      const timeRatio = Math.max(0, remainingDist / (activeRoute.distance * 1000));
+      const remainingMins = Math.round(activeRoute.duration * timeRatio);
+      setRemainingDuration(remainingDist > 100 ? Math.max(1, remainingMins) : 0);
+
+      // Extract current road and next step
+      if (activeRoute.steps.length > 0) {
+        const progress = closestIndex / routeCoordinates.length;
+        const stepIdx = Math.min(
+          activeRoute.steps.length - 1,
+          Math.floor(progress * activeRoute.steps.length)
+        );
+        setNextStepIndex(stepIdx);
+        
+        const currentStep = activeRoute.steps[stepIdx];
+        setCurrentRoadName(currentStep.name && currentStep.name !== "-" ? currentStep.name : (currentStep.instruction.match(/(?:on|to|onto|along)\s+([^,.]+)/i)?.[1] || currentStep.instruction));
+      }
+    }
+  }, [currentLocation, activeRouteIndex, allRoutes]);
+
+  // Load saved preferences
+  useEffect(() => {
     const savedPrefs = dataManager.getPreferences();
     if (savedPrefs.maxDrivingTime) {
       setPreferences((prev) => ({ ...prev, ...savedPrefs }));
@@ -107,6 +245,11 @@ export default function RouteOptimizer() {
           
           console.log(`✅ Found ${data.stops.length} rest stops`);
           setAiRestStops(formattedStops);
+          setMapSafeStops(data.stops.map((stop: any) => ({
+            ...stop,
+            icon: "🛑",
+            category: stop.type || "Rest Stop"
+          })));
         } else {
           console.log("⚠️ No stops found, using AI fallback");
           await fetchAIFallback(origin, destination);
@@ -217,56 +360,86 @@ Be specific and helpful!`;
         );
       }
 
-      // Calculate route using API client
-      const route = await apiClient.calculateRoute(
+      // Calculate routes using API client
+      const rawRoutes = await apiClient.calculateRoute(
         originCoords,
         destCoords,
         preferences
       );
-      console.log("Route calculated:", route);
+      
+      console.log("Found routes:", rawRoutes.length);
 
-      // Decode the route geometry for map display
-      const decodedCoordinates = decodePolyline(route.geometry);
-
-      // Find rest stops along the route (simplified for now)
-      const restStops: any[] = [];
-
-      const calculatedRoute: RouteSegment = {
-        distance: Math.round((route.summary.distance / 1000) * 10) / 10, // Convert to km and round
-        duration: Math.round(route.summary.duration / 60), // Convert to minutes
-        instructions: route.segments?.flatMap(
+      const processedRoutes: RouteSegment[] = rawRoutes.map((r: any) => {
+        const coords = decodePolyline(r.geometry);
+        const steps: RouteStep[] = r.segments?.flatMap(
           (segment: any) =>
-            segment.steps?.map((step: any) => step.instruction) || []
-        ) || ["Route calculated successfully"],
-        restStops: restStops,
-      };
+            segment.steps?.map((step: any) => ({
+              instruction: step.instruction,
+              distance: step.distance,
+              duration: step.duration,
+              name: step.name
+            })) || []
+        ) || [];
+        
+        const instructions = steps.map(s => s.instruction);
+        
+        // Find major roads
+        const roadNames = steps
+          .map(s => s.name)
+          .filter(name => name && name !== "-" && name.length > 1);
+        const majorRoads = Array.from(new Set(roadNames));
 
-      console.log("Calculated route:", calculatedRoute);
-      console.log("Route coordinates:", decodedCoordinates.length, "points");
-      setRoute(calculatedRoute);
+        // Find main road name (longest distance step)
+        let mainRoad = majorRoads[0] || "Unknown Road";
+        let maxStepDist = -1;
+        steps.forEach((step) => {
+          if (step.distance > maxStepDist && step.name && step.name !== "-") {
+            maxStepDist = step.distance;
+            mainRoad = step.name;
+          }
+        });
 
-      // Fetch real rest stops using SerpAPI
-      fetchRealRestStops(origin, destination, decodedCoordinates);
+        return {
+          distance: Math.round((r.summary.distance / 1000) * 10) / 10,
+          duration: Math.round(r.summary.duration / 60),
+          instructions,
+          steps,
+          geometry: r.geometry,
+          decodedCoordinates: coords,
+          restStops: [],
+          mainRoad,
+          majorRoads
+        };
+      });
 
-      // Save route for live tracking
+      setAllRoutes(processedRoutes);
+      setActiveRouteIndex(0);
+      setNextStepIndex(0);
+      
+      const firstRoute = processedRoutes[0];
+      setRemainingDistance(firstRoute.distance);
+      setRemainingDuration(firstRoute.duration);
+      
+      // Fetch rest stops for the main route
+      fetchRealRestStops(origin, destination, firstRoute.decodedCoordinates);
+
+      // Save for live tracking
       const routeForTracking = {
         origin,
         destination,
-        coordinates: decodedCoordinates,
-        distance: calculatedRoute.distance,
-        duration: calculatedRoute.duration,
+        coordinates: firstRoute.decodedCoordinates,
+        distance: firstRoute.distance,
+        duration: firstRoute.duration,
         currentProgress: 0,
       };
 
       dataManager.saveData("activeRoute", routeForTracking);
 
-      // Show success message with route info
+      // Alert success
       alert(
-        `Route calculated successfully!\n\nDistance: ${
-          calculatedRoute.distance
-        } km\nDuration: ${formatDuration(
-          calculatedRoute.duration
-        )}\n\nLive tracking is now available in the draggable widget.`
+        `Found ${processedRoutes.length} routes!\n\nBest Route: ${
+          firstRoute.distance
+        } km | ${formatDuration(firstRoute.duration)}\nvia ${firstRoute.mainRoad}`
       );
     } catch (error) {
       console.error("Error calculating route:", error);
@@ -434,50 +607,13 @@ Be specific and helpful!`;
     return samples;
   };
 
-  const calculateDistance = (coord1: number[], coord2: number[]) => {
-    const R = 6371000; // Earth's radius in meters
-    const lat1Rad = (coord1[1] * Math.PI) / 180;
-    const lat2Rad = (coord2[1] * Math.PI) / 180;
-    const deltaLat = ((coord2[1] - coord1[1]) * Math.PI) / 180;
-    const deltaLng = ((coord2[0] - coord1[0]) * Math.PI) / 180;
 
-    const a =
-      Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-      Math.cos(lat1Rad) *
-        Math.cos(lat2Rad) *
-        Math.sin(deltaLng / 2) *
-        Math.sin(deltaLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
-
-  const getAmenitiesFromPOI = (properties: any) => {
-    const amenities: string[] = [];
-    const tags = properties.osm_tags || {};
-
-    if (tags.fuel || properties.category_ids?.includes(142))
-      amenities.push("Fuel");
-    if (tags.toilets || tags.restroom) amenities.push("Restrooms");
-    if (tags.restaurant || tags.fast_food || tags.cafe) amenities.push("Food");
-    if (tags.parking) amenities.push("Parking");
-    if (tags.atm) amenities.push("ATM");
-    if (tags.shower) amenities.push("Showers");
-
-    return amenities.length > 0 ? amenities : ["Services Available"];
-  };
-
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
 
   const getBreakRecommendations = () => {
-    if (!route) return [];
+    if (!activeRoute) return [];
 
     const recommendations = [];
-    const totalHours = route.duration / 60;
+    const totalHours = activeRoute.duration / 60;
 
     if (totalHours > preferences.maxDrivingTime) {
       const breaksNeeded =
@@ -485,9 +621,9 @@ Be specific and helpful!`;
       recommendations.push(`Take ${breaksNeeded} break(s) during this journey`);
     }
 
-    if (route.restStops.length > 0) {
+    if (activeRoute.restStops && activeRoute.restStops.length > 0) {
       recommendations.push(
-        `${route.restStops.length} rest areas available along the route`
+        `${activeRoute.restStops.length} rest areas available along the route`
       );
     }
 
@@ -573,12 +709,15 @@ Be specific and helpful!`;
             )}
           </button>
 
-          {route && (
+          {activeRoute && (
             <button
               onClick={() => {
                 setOrigin("");
                 setDestination("");
-                setRoute(null);
+                setAllRoutes([]);
+                setActiveRouteIndex(0);
+                setNextStepIndex(0);
+                setCurrentRoadName(null);
                 dataManager.clearData("activeRoute");
               }}
               className="bg-gray-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-gray-600 transition-colors text-sm"
@@ -592,6 +731,129 @@ Be specific and helpful!`;
           Route will be calculated and live tracking will begin automatically
         </div>
       </div>
+
+      {/* Main Map View - Uber style */}
+      <div className="card overflow-hidden !p-0 border-2 border-blue-200">
+        <div className="p-4 bg-white border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-900 flex items-center">
+            <span className="mr-2">🗺️</span>
+            Live Iterative Map
+          </h3>
+          {currentLocation && (
+            <div className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+              📍 {currentLocation.lat.toFixed(4)}, {currentLocation.lon.toFixed(4)}
+            </div>
+          )}
+        </div>
+        
+        <div className="relative h-[400px]">
+          {currentLocation ? (
+            <MapView 
+              lat={currentLocation.lat}
+              lon={currentLocation.lon}
+              routeCoordinates={routeCoordinates}
+              secondaryRoutes={allRoutes
+                .filter((_, idx) => idx !== activeRouteIndex)
+                .map(r => r.decodedCoordinates)
+              }
+              safeStops={mapSafeStops}
+              onStopSelect={(stop) => {
+                alert(`Selected stop: ${stop.name}\nAddress: ${stop.address}`);
+              }}
+            />
+          ) : (
+            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p className="text-gray-600">Waiting for location access...</p>
+              </div>
+            </div>
+          )}
+
+          {activeRoute && remainingDistance !== null && (
+            <div className="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-blue-200 p-5 min-w-[220px] animate-slide-in">
+              <div className="flex flex-col space-y-4">
+                {currentRoadName && (
+                  <div className="bg-blue-600 -mx-5 -mt-5 px-5 py-2 rounded-t-2xl text-white">
+                    <p className="text-[10px] uppercase font-bold opacity-80">Current Road</p>
+                    <p className="text-sm font-black truncate">{currentRoadName}</p>
+                  </div>
+                )}
+                
+                <div className="flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Remaining</p>
+                    <div className="flex items-baseline space-x-1">
+                      <span className="text-3xl font-black text-blue-600 tracking-tighter">{remainingDistance}</span>
+                      <span className="text-xs font-bold text-blue-400 uppercase">km</span>
+                    </div>
+                  </div>
+                  <div className="h-10 w-[2px] bg-gray-100"></div>
+                  <div className="flex flex-col text-right">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Est. Arrival</p>
+                    <div className="flex items-baseline justify-end space-x-1">
+                      <span className="text-2xl font-black text-indigo-600 tracking-tighter">
+                        {remainingDuration !== null ? formatDuration(remainingDuration) : "--"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="relative pt-2">
+                  <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden shadow-inner">
+                    <div 
+                      className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 h-full transition-all duration-1000 ease-out relative"
+                      style={{ 
+                        width: `${Math.max(5, 100 - (remainingDistance / activeRoute.distance) * 100)}%` 
+                      }}
+                    >
+                      <div className="absolute top-0 right-0 w-2 h-full bg-white/30 animate-pulse"></div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between items-center mt-2 text-[10px] font-bold text-gray-500 uppercase">
+                    <span>Origin</span>
+                    <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                      {Math.round(Math.min(100, 100 - (remainingDistance / activeRoute.distance) * 100))}% done
+                    </span>
+                    <span>Dest.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {allRoutes.length > 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {allRoutes.map((r, idx) => (
+            <button
+              key={`route-opt-${idx}`}
+              onClick={() => {
+                setActiveRouteIndex(idx);
+                setNextStepIndex(0);
+              }}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                activeRouteIndex === idx
+                  ? "border-blue-500 bg-blue-50 shadow-md ring-4 ring-blue-500/10"
+                  : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+              }`}
+            >
+              <div className="flex justify-between items-start mb-2">
+                <span className={`text-xs font-bold px-2 py-1 rounded ${
+                  idx === 0 ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                }`}>
+                  {idx === 0 ? "BEST ROUTE" : `ALT ROUTE ${idx}`}
+                </span>
+                <span className="text-lg font-black text-gray-800">{formatDuration(r.duration)}</span>
+              </div>
+              <p className="text-xs text-gray-500 font-medium mb-1 line-clamp-1">via {r.mainRoad}</p>
+              <p className="text-sm font-bold text-blue-600">{r.distance} km</p>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Route Preferences */}
       <div className="card">
@@ -685,155 +947,235 @@ Be specific and helpful!`;
         </div>
       </div>
 
-      {/* Route Results */}
-      {route && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="mr-2">📍</span>
-              Route Overview
-            </h3>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {route.distance} km
-                  </div>
-                  <div className="text-sm text-blue-800">Total Distance</div>
-                </div>
-
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatDuration(route.duration)}
-                  </div>
-                  <div className="text-sm text-green-800">Estimated Time</div>
-                </div>
+      {/* Route Results & Live Guidance */}
+      {activeRoute && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 space-y-6">
+            <div className="card !p-0 overflow-hidden border-2 border-indigo-100 shadow-xl">
+              <div className="bg-indigo-600 p-4 text-white">
+                <h3 className="text-lg font-black flex items-center">
+                  <span className="mr-2">🛤️</span>
+                  Live Trip Guide
+                </h3>
+                {activeRoute.majorRoads.length > 0 && (
+                  <p className="text-[10px] mt-1 text-indigo-100 font-bold uppercase tracking-widest overflow-hidden text-ellipsis whitespace-nowrap">
+                    {activeRoute.majorRoads.join(" • ")}
+                  </p>
+                )}
               </div>
-
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">
-                  Turn-by-turn Directions
-                </h4>
-                <div className="space-y-2">
-                  {route.instructions.map((instruction, index) => (
-                    <div key={index} className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                        {index + 1}
-                      </div>
-                      <p className="text-sm text-gray-700">{instruction}</p>
-                    </div>
-                  ))}
+              
+              <div className="p-4 space-y-4">
+                <div className="flex justify-between items-center text-sm font-bold text-gray-500">
+                  <span>Current Leg</span>
+                  <span className="text-indigo-600">{formatDuration(activeRoute.duration)}</span>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="mr-2">🛑</span>
-              Recommended Rest Stops
-            </h3>
-
-            <div className="space-y-4">
-              {aiRestStops ? (
-                <div className="space-y-3">
-                  {aiRestStops.split('\n\n').map((block, index) => {
-                    // Skip empty blocks
-                    if (!block.trim()) return null;
+                
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                  {activeRoute.steps.map((step, index) => {
+                    const isPassed = index < nextStepIndex;
+                    const isNext = index === nextStepIndex;
                     
-                    // Check if it's a title/header
-                    if (block.startsWith('🛑') || block.startsWith('Found')) {
-                      return (
-                        <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-                          <p className="text-base font-bold text-blue-900">{block}</p>
-                        </div>
-                      );
-                    }
-                    
-                    // Check if it's a rest stop entry (starts with **)
-                    if (block.includes('**')) {
-                      const lines = block.split('\n');
-                      const nameMatch = lines[0].match(/\*\*(.+?)\*\*/);
-                      const name = nameMatch ? nameMatch[1] : lines[0];
-                      
-                      // Extract details
-                      const address = lines.find(l => l.includes('📍'))?.replace('📍', '').trim() || '';
-                      const position = lines.find(l => l.includes('📌'))?.replace('📌', '').trim() || '';
-                      const rating = lines.find(l => l.includes('⭐'))?.replace('⭐', '').trim() || '';
-                      const linkMatch = block.match(/\[View on Google Maps\]\((https?:\/\/[^\)]+)\)/);
-                      const link = linkMatch ? linkMatch[1] : '';
-                      
-                      return (
-                        <div key={index} className="card hover:shadow-xl transition-all duration-300 border-l-4 border-blue-500">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h4 className="text-lg font-bold text-gray-900 mb-2">{name}</h4>
-                              {address && (
-                                <p className="text-sm text-gray-600 mb-1">
-                                  <span className="font-semibold">📍</span> {address}
-                                </p>
-                              )}
-                              {position && (
-                                <p className="text-sm text-gray-600 mb-1">
-                                  <span className="font-semibold">📌</span> {position}
-                                </p>
-                              )}
-                              {rating && (
-                                <p className="text-sm text-yellow-600 font-semibold mb-2">
-                                  ⭐ {rating}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          {link && (
-                            <a
-                              href={link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-3 inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-semibold"
-                            >
-                              <span>🗺️</span>
-                              <span>View on Google Maps</span>
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
-                          )}
-                        </div>
-                      );
-                    }
-                    
-                    // Safety tip or other text
-                    if (block.includes('💡')) {
-                      return (
-                        <div key={index} className="bg-green-50 border border-green-200 rounded-lg p-4">
-                          <p className="text-sm text-green-800 font-medium">{block}</p>
-                        </div>
-                      );
-                    }
-                    
-                    // Default text
                     return (
-                      <div key={index} className="text-sm text-gray-700">
-                        {block}
+                      <div 
+                        key={`step-${index}`}
+                        className={`relative pl-8 pb-4 border-l-2 transition-all duration-500 ${
+                          isNext ? "border-indigo-500" : isPassed ? "border-green-400" : "border-gray-200"
+                        }`}
+                      >
+                        <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center transition-all ${
+                          isNext ? "border-indigo-500 scale-125 shadow-lg shadow-indigo-200" : isPassed ? "border-green-400 bg-green-50" : "border-gray-300"
+                        }`}>
+                          {isPassed && <span className="text-[8px] text-green-500">✓</span>}
+                          {isNext && <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div>}
+                        </div>
+                        
+                        <div className={`${isNext ? "bg-indigo-50 p-3 rounded-xl border border-indigo-100 -mt-1" : ""}`}>
+                          <p className={`text-sm font-bold ${
+                            isNext ? "text-indigo-900" : isPassed ? "text-gray-400 line-through" : "text-gray-700"
+                          }`}>
+                            {step.instruction}
+                          </p>
+                          <div className="flex items-center mt-1 space-x-2">
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                              isNext ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-500"
+                            }`}>
+                              {step.distance >= 1000 ? `${(step.distance/1000).toFixed(1)} km` : `${Math.round(step.distance)} m`}
+                            </span>
+                            {step.name && step.name !== "-" && (
+                              <span className="text-[10px] text-gray-400 font-medium italic">on {step.name}</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                  <p>Loading recommendations...</p>
+              </div>
+            </div>
+            
+            <div className="card bg-gradient-to-br from-indigo-900 to-blue-900 text-white border-0 shadow-2xl">
+              <h4 className="text-sm font-black uppercase tracking-tighter opacity-70 mb-4 flex items-center">
+                <span className="mr-2">🛡️</span>
+                Drive Resilience
+              </h4>
+              <div className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <p className="text-2xl font-black">94<span className="text-sm opacity-60">%</span></p>
+                  <p className="text-[10px] font-bold text-indigo-300">OPTIMAL RANGE</p>
                 </div>
-              )}
+                <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-400 to-indigo-400 h-full w-[94%] shadow-[0_0_10px_rgba(96,165,250,0.5)]"></div>
+                </div>
+                <p className="text-[11px] text-indigo-200 italic font-medium leading-relaxed">
+                  "Your alertness is peak. NH19 conditions are clear for the next 45km."
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 space-y-6">
+            <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <span className="mr-2">📍</span>
+                Route Overview
+              </h3>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {activeRoute.distance} km
+                    </div>
+                    <div className="text-sm text-blue-800">Total Distance</div>
+                  </div>
+
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">
+                      {formatDuration(activeRoute.duration)}
+                    </div>
+                    <div className="text-sm text-green-800">Estimated Time</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6">
+                <h4 className="font-black text-gray-900 mb-4 flex items-center text-sm">
+                  <span className="mr-2">🏁</span>
+                  DESTINATION REACHABLE IN
+                </h4>
+                <div className="flex items-center space-x-4">
+                  <div className="flex-1 bg-gray-50 rounded-2xl p-6 border border-gray-100 flex flex-col items-center">
+                    <span className="text-4xl font-black text-gray-800 tracking-tighter">
+                      {remainingDuration !== null ? formatDuration(remainingDuration) : "--"}
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-400 mt-2">PROJECTED ARRIVAL</span>
+                  </div>
+                  <div className="w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <span className="mr-2">🛑</span>
+                Recommended Rest Stops
+              </h3>
+
+              <div className="space-y-4">
+                {aiRestStops ? (
+                  <div className="space-y-3">
+                    {aiRestStops.split('\n\n').map((block, index) => {
+                      // Skip empty blocks
+                      if (!block.trim()) return null;
+                      
+                      // Check if it's a title/header
+                      if (block.startsWith('🛑') || block.startsWith('Found')) {
+                        return (
+                          <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-base font-bold text-blue-900">{block}</p>
+                          </div>
+                        );
+                      }
+                      
+                      // Check if it's a rest stop entry (starts with **)
+                      if (block.includes('**')) {
+                        const lines = block.split('\n');
+                        const nameMatch = lines[0].match(/\*\*(.+?)\*\*/);
+                        const name = nameMatch ? nameMatch[1] : lines[0];
+                        
+                        // Extract details
+                        const address = lines.find(l => l.includes('📍'))?.replace('📍', '').trim() || '';
+                        const position = lines.find(l => l.includes('📌'))?.replace('📌', '').trim() || '';
+                        const rating = lines.find(l => l.includes('⭐'))?.replace('⭐', '').trim() || '';
+                        const linkMatch = block.match(/\[View on Google Maps\]\((https?:\/\/[^\)]+)\)/);
+                        const link = linkMatch ? linkMatch[1] : '';
+                        
+                        return (
+                          <div key={index} className="card hover:shadow-xl transition-all duration-300 border-l-4 border-blue-500">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="text-lg font-bold text-gray-900 mb-2">{name}</h4>
+                                {address && (
+                                  <p className="text-sm text-gray-600 mb-1">
+                                    <span className="font-semibold">📍</span> {address}
+                                  </p>
+                                )}
+                                {position && (
+                                  <p className="text-sm text-gray-600 mb-1">
+                                    <span className="font-semibold">📌</span> {position}
+                                  </p>
+                                )}
+                                {rating && (
+                                  <p className="text-sm text-yellow-600 font-semibold mb-2">
+                                    ⭐ {rating}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {link && (
+                              <a
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-semibold"
+                              >
+                                <span>🗺️</span>
+                                <span>View on Google Maps</span>
+                              </a>
+                            )}
+                          </div>
+                        );
+                      }
+                      
+                      if (block.includes('💡')) {
+                        return (
+                          <div key={index} className="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <p className="text-sm text-green-800 font-medium">{block}</p>
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <div key={index} className="text-sm text-gray-700">
+                          {block}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p>Loading recommendations...</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Safety Recommendations */}
-      {route && (
+      {activeRoute && (
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <span className="mr-2">💡</span>

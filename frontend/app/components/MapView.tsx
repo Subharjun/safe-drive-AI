@@ -29,6 +29,7 @@ interface MapViewProps {
   lon: number;
   safeStops: any[];
   routeCoordinates?: number[][];
+  secondaryRoutes?: number[][][];
   onStopSelect?: (stop: any) => void;
 }
 
@@ -37,6 +38,7 @@ export default function MapView({
   lon,
   safeStops,
   routeCoordinates,
+  secondaryRoutes,
   onStopSelect,
 }: MapViewProps) {
   const [selectedStop, setSelectedStop] = useState<any>(null);
@@ -193,15 +195,29 @@ export default function MapView({
             );
           })}
 
-          {/* Route Polyline */}
+          {/* Secondary Routes */}
+          {secondaryRoutes && secondaryRoutes.map((coords, idx) => (
+            <Polyline
+              key={`alt-route-${idx}`}
+              positions={coords.map(
+                (coord) => [coord[1], coord[0]] as [number, number]
+              )}
+              color="#94a3b8"
+              weight={3}
+              opacity={0.5}
+              dashArray="5, 10"
+            />
+          ))}
+
+          {/* Active Route Polyline */}
           {routeCoordinates && routeCoordinates.length > 0 && (
             <Polyline
               positions={routeCoordinates.map(
                 (coord) => [coord[1], coord[0]] as [number, number]
               )}
               color="#3b82f6"
-              weight={4}
-              opacity={0.8}
+              weight={5}
+              opacity={0.9}
             />
           )}
         </MapContainer>

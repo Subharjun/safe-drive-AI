@@ -5,7 +5,6 @@ import DashboardLayout from './components/DashboardLayout'
 import VideoMonitor from './components/VideoMonitor'
 import RouteOptimizer from './components/RouteOptimizer'
 import CombinedDashboard from './components/CombinedDashboard'
-import SafetyAlerts from './components/SafetyAlerts'
 import BlockchainDashboard from './components/BlockchainDashboard'
 
 export default function Home() {
@@ -15,12 +14,29 @@ export default function Home() {
     stress: number;
     isActive: boolean;
     lastUpdate: Date | null;
+    interventionCount: number;
+    drivingDuration: number;
+    detailedMetrics?: {
+      drowsiness?: any;
+      stress?: any;
+    };
   }>({
     drowsiness: 0,
     stress: 0,
     isActive: false,
-    lastUpdate: null
+    lastUpdate: null,
+    interventionCount: 0,
+    drivingDuration: 0
   })
+  
+  const [lastSessionData, setLastSessionData] = useState<typeof monitoringData | null>(null)
+
+  // Update last session data when monitoring stops
+  useEffect(() => {
+    if (!monitoringData.isActive && monitoringData.drivingDuration > 0) {
+      setLastSessionData({ ...monitoringData })
+    }
+  }, [monitoringData.isActive])
 
   // Listen for custom tab switch events from components
   useEffect(() => {
@@ -39,7 +55,6 @@ export default function Home() {
     { id: 'routes', label: 'Navigation & Routes', icon: '🗺️' },
     { id: 'monitor', label: 'Live Monitor', icon: '📹' },
     { id: 'dashboard', label: 'Wellness & Analytics', icon: '📊' },
-    { id: 'alerts', label: 'Safety Alerts', icon: '🚨' },
     { id: 'blockchain', label: 'Blockchain', icon: '🔗' }
   ]
 
@@ -51,18 +66,17 @@ export default function Home() {
         return <RouteOptimizer />
       case 'dashboard':
         return <CombinedDashboard data={monitoringData} onNavigateToMonitor={() => setActiveTab('monitor')} />
-      case 'alerts':
-        return <SafetyAlerts data={monitoringData} />
       case 'blockchain':
+        const displayData = monitoringData.isActive ? monitoringData : lastSessionData
         return <BlockchainDashboard 
           currentSafetyMetrics={
-            monitoringData.isActive
+            displayData
               ? {
-                  drowsinessLevel: monitoringData.drowsiness * 100,
-                  stressLevel: monitoringData.stress * 100,
-                  interventionCount: 0,
-                  routeCompliance: 95,
-                  drivingDuration: 0,
+                  drowsinessLevel: displayData.drowsiness,
+                  stressLevel: displayData.stress,
+                  interventionCount: displayData.interventionCount,
+                  routeCompliance: 95, 
+                  drivingDuration: displayData.drivingDuration,
                 }
               : undefined
           }

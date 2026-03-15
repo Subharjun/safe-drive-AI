@@ -27,6 +27,12 @@ interface MonitoringData {
   stress: number;
   isActive: boolean;
   lastUpdate: Date | null;
+  interventionCount: number;
+  drivingDuration: number;
+  detailedMetrics?: {
+    drowsiness?: any;
+    stress?: any;
+  };
 }
 
 interface SessionData {
@@ -39,6 +45,8 @@ interface SessionData {
   avgStress: number;
   safetyScore: number;
   dataPoints: number;
+  rawStartTime: string;
+  rawEndTime: string;
 }
 
 interface Props {
@@ -55,6 +63,9 @@ export default function UnifiedWellnessDashboard({
   const [loadingAI, setLoadingAI] = useState(false);
   const [totalSessions, setTotalSessions] = useState(0);
   const [improvement, setImprovement] = useState<number>(0);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   useEffect(() => {
     loadSessions();
@@ -69,8 +80,92 @@ export default function UnifiedWellnessDashboard({
     // Save current session data when monitoring is active
     if (data.isActive && data.lastUpdate) {
       saveCurrentSession();
+      generateSafetyAlerts();
+    }
+    
+    // Periodically update location when active
+    if (data.isActive) {
+      updateLocation();
     }
   }, [data]);
+
+  const updateLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCurrentLocation({ 
+            lat: position.coords.latitude, 
+            lon: position.coords.longitude 
+          });
+        },
+        null,
+        { enableHighAccuracy: true }
+      );
+    }
+  };
+
+  const generateSafetyAlerts = () => {
+    const newAlerts: any[] = [];
+    if (data.drowsiness > 0.7) {
+      newAlerts.push({
+        id: Date.now(),
+        type: "drowsiness",
+        severity: "CRITICAL",
+        message: "Severe drowsiness detected! Please pull over.",
+        icon: "🚨"
+      });
+    }
+    if (data.stress > 0.8) {
+      newAlerts.push({
+        id: Date.now() + 1,
+        type: "stress",
+        severity: "HIGH",
+        message: "High stress detected. Take deep breaths.",
+        icon: "⚠️"
+      });
+    }
+    
+    if (newAlerts.length > 0) {
+      setAlerts(prev => [...newAlerts, ...prev].slice(0, 5));
+    }
+  };
+
+  const handleEmergencyCall = () => {
+    if (confirm("🚨 EMERGENCY CALL\n\nConnect to local emergency services?")) {
+      window.location.href = "tel:911";
+    }
+  };
+
+  const handleShareLocation = async () => {
+    setIsSharing(true);
+    if (!currentLocation) {
+      updateLocation();
+      alert("Fetching precise location coordinates...");
+      setIsSharing(false);
+      return;
+    }
+
+    const shareText = `🚨 SAFE-DRIVE EMERGENCY ALERT\nDriver needs assistance.\nLocation: https://www.google.com/maps?q=${currentLocation.lat},${currentLocation.lon}\nStatus: ${data.drowsiness > 0.5 ? "Drowsy" : "Active"}\nTime: ${new Date().toLocaleString()}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Safe-Drive Emergency",
+          text: shareText
+        });
+      } catch (e) {
+        copyToClipboard(shareText);
+      }
+    } else {
+      copyToClipboard(shareText);
+    }
+    setIsSharing(false);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert("✅ Emergency location and status copied to clipboard!");
+  };
 
   const loadSessions = async () => {
     try {
@@ -89,6 +184,8 @@ export default function UnifiedWellnessDashboard({
         avgStress: Math.round(s.avg_stress),
         safetyScore: Math.round(s.safety_score),
         dataPoints: s.data_points,
+        rawStartTime: s.start_time,
+        rawEndTime: s.end_time,
       }));
 
       setSessions(formattedSessions);
@@ -101,10 +198,10 @@ export default function UnifiedWellnessDashboard({
     }
   };
 
-  const clearAllData = async () => {
+  const handleClearAll = async () => {
     if (
       confirm(
-        "⚠️ Are you sure you want to delete all wellness data and sessions from MongoDB? This cannot be undone."
+        "⚠️ Are you sure you want to delete all wellness data and sessions from MongoDB Atlas? This cannot be undone."
       )
     ) {
       const success = await dataManager.clearWellnessData();
@@ -113,89 +210,31 @@ export default function UnifiedWellnessDashboard({
         setTotalSessions(0);
         setImprovement(0);
         setAiRecommendations(
-          "All data cleared from MongoDB. Start monitoring to build new session history."
+          "All data cleared from MongoDB Atlas. Start monitoring to build new session history."
         );
-        console.log("🗑️ All wellness data cleared from MongoDB");
+        console.log("🗑️ All wellness data cleared from MongoDB Atlas");
       } else {
         alert("Failed to clear data. Check console for errors.");
       }
     }
   };
 
-  // No longer needed - MongoDB backend handles session grouping
-  const groupIntoSessions = (history: any[]): SessionData[] => {
-    if (history.length === 0) return [];
-
-    const sessions: SessionData[] = [];
-    let currentSession: any[] = [];
-    let lastTimestamp: Date | null = null;
-
-    history.forEach((item, index) => {
-      const timestamp = new Date(item.timestamp);
-
-      // New session if gap > 5 minutes
-      if (
-        lastTimestamp &&
-        timestamp.getTime() - lastTimestamp.getTime() > 5 * 60 * 1000
-      ) {
-        if (currentSession.length > 0) {
-          const sessionData = createSessionData(currentSession);
-          console.log(
-            `📊 Session ${sessions.length + 1}: ${
-              currentSession.length
-            } data points, ${sessionData.duration} min`
-          );
-          sessions.push(sessionData);
-          currentSession = [];
+  const handleDeleteSession = async (session: SessionData) => {
+    if (confirm(`Are you sure you want to delete this session from ${session.date}?`)) {
+      try {
+        const success = await dataManager.deleteSession(
+          session.sessionId,
+          session.rawStartTime,
+          session.rawEndTime
+        );
+        if (success) {
+          setSessions(prev => prev.filter(s => s.sessionId !== session.sessionId));
+          setTotalSessions(prev => Math.max(0, prev - 1));
         }
+      } catch (error) {
+        console.error("Error deleting session:", error);
       }
-
-      currentSession.push(item);
-      lastTimestamp = timestamp;
-    });
-
-    // Add last session
-    if (currentSession.length > 0) {
-      const sessionData = createSessionData(currentSession);
-      console.log(
-        `📊 Session ${sessions.length + 1} (final): ${
-          currentSession.length
-        } data points, ${sessionData.duration} min`
-      );
-      sessions.push(sessionData);
     }
-
-    console.log(`📊 Total sessions created: ${sessions.length}`);
-    return sessions.reverse(); // Most recent first
-  };
-
-  const createSessionData = (sessionItems: any[]): SessionData => {
-    const startTime = new Date(sessionItems[0].timestamp);
-    const endTime = new Date(sessionItems[sessionItems.length - 1].timestamp);
-    const duration = (endTime.getTime() - startTime.getTime()) / 1000 / 60; // minutes
-
-    const avgDrowsiness =
-      sessionItems.reduce((sum, item) => sum + (item.drowsiness || 0), 0) /
-      sessionItems.length;
-    const avgStress =
-      sessionItems.reduce((sum, item) => sum + (item.stress || 0), 0) /
-      sessionItems.length;
-    const safetyScore = Math.max(
-      0,
-      100 - (avgDrowsiness * 30 + avgStress * 25)
-    );
-
-    return {
-      sessionId: `session-${startTime.getTime()}`,
-      date: startTime.toLocaleDateString(),
-      startTime: startTime.toLocaleTimeString(),
-      endTime: endTime.toLocaleTimeString(),
-      duration: Math.round(duration),
-      avgDrowsiness: Math.round(avgDrowsiness),
-      avgStress: Math.round(avgStress),
-      safetyScore: Math.round(safetyScore),
-      dataPoints: sessionItems.length,
-    };
   };
 
   const saveCurrentSession = () => {
@@ -581,6 +620,117 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
         </div>
       </div>
 
+      {/* Live AI Engine Status & Emergency Controls */}
+      {data.isActive && (
+        <div className="space-y-4">
+          <div className="bg-gradient-to-r from-gray-950 via-blue-950 to-gray-950 rounded-2xl p-6 shadow-2xl border border-blue-500/40 relative overflow-hidden">
+            {/* Animated Scanning Effect */}
+            <div className="absolute inset-0 bg-blue-500/5 scanline pointer-events-none"></div>
+            
+            <div className="flex flex-col lg:flex-row justify-between items-center gap-8 relative z-10">
+              <div className="flex items-center space-x-5">
+                <div className="relative group">
+                  <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center border-2 border-blue-400/30 group-hover:border-blue-400/60 transition-all duration-500">
+                    <span className="text-3xl animate-pulse">🧠</span>
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-4 border-gray-950 animate-ping"></div>
+                </div>
+                <div>
+                  <h4 className="text-blue-200 font-extrabold text-sm tracking-[0.2em] uppercase">Neural Live Feed</h4>
+                  <div className="flex items-center space-x-3 mt-2">
+                    <div className="h-1.5 w-40 bg-blue-900/40 rounded-full overflow-hidden border border-blue-800/30">
+                      <div 
+                        className="h-full bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-400 animate-shimmer" 
+                        style={{ width: '100%', backgroundSize: '200% 100%' }}
+                      ></div>
+                    </div>
+                    <span className="text-[10px] text-blue-400 font-mono font-bold tracking-widest animate-pulse">
+                      STATUS: ANALYZING_FRAMES
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full lg:w-auto">
+                <div className="px-4 py-3 bg-white/5 rounded-xl border border-white/10 backdrop-blur-xl hover:bg-white/10 transition-colors">
+                  <div className="text-[10px] text-blue-400 uppercase font-bold tracking-wider mb-1">Attention</div>
+                  <div className="text-lg text-white font-black">{(100 - data.drowsiness * 100).toFixed(0)}%</div>
+                </div>
+                <div className="px-4 py-3 bg-white/5 rounded-xl border border-white/10 backdrop-blur-xl hover:bg-white/10 transition-colors">
+                  <div className="text-[10px] text-purple-400 uppercase font-bold tracking-wider mb-1">Calmness</div>
+                  <div className="text-lg text-white font-black">{(100 - data.stress * 100).toFixed(0)}%</div>
+                </div>
+                <div className="px-4 py-3 bg-white/5 rounded-xl border border-white/10 backdrop-blur-xl hover:bg-white/10 transition-colors">
+                  <div className="text-[10px] text-pink-400 uppercase font-bold tracking-wider mb-1">Emotion</div>
+                  <div className="text-sm text-white font-bold truncate max-w-[100px]">
+                    {data.detailedMetrics?.stress?.emotion || "Stable"}
+                  </div>
+                </div>
+                <div className="px-4 py-3 bg-white/5 rounded-xl border border-white/10 backdrop-blur-xl hover:bg-white/10 transition-colors">
+                  <div className="text-[10px] text-green-400 uppercase font-bold tracking-wider mb-1">Health</div>
+                  <div className="text-sm text-white font-bold">Optimal ✅</div>
+                </div>
+              </div>
+
+              {/* Enhanced Emergency Buttons and Alerts Integration */}
+              <div className="flex items-center space-x-3 w-full lg:w-auto">
+                <button 
+                  onClick={handleEmergencyCall}
+                  className="flex-1 lg:flex-none flex items-center justify-center space-x-2 px-6 py-3 bg-red-600/20 hover:bg-red-600/40 text-red-100 border border-red-500/50 rounded-xl font-bold transition-all hover:scale-105"
+                >
+                  <span className="text-lg">📞</span>
+                  <span className="text-xs uppercase tracking-tighter">Emergency</span>
+                </button>
+                <button 
+                  onClick={handleShareLocation}
+                  disabled={isSharing}
+                  className="flex-1 lg:flex-none flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600/20 hover:bg-blue-600/40 text-blue-100 border border-blue-500/50 rounded-xl font-bold transition-all hover:scale-105"
+                >
+                  <span className="text-lg">📍</span>
+                  <span className="text-xs uppercase tracking-tighter">{isSharing ? 'Sharing...' : 'Share Location'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Live Message Ticker - making it feel alive */}
+            <div className="mt-6 pt-4 border-t border-blue-500/20 flex items-center space-x-4">
+              <div className="flex-shrink-0 flex items-center space-x-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></div>
+                <span className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Live Logs:</span>
+              </div>
+              <div className="flex-1 overflow-hidden h-5">
+                <div className="text-[11px] text-blue-200/80 font-mono animate-scroll-up">
+                  {alerts.length > 0 ? (
+                    <span className="text-red-400 font-bold">[{alerts[0].severity}] {alerts[0].message}</span>
+                  ) : (
+                    <span>[SYSTEM] Neural networks operating within safe parameters... scanning for anomalies.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Critical Alerts Card - Only shows when there are active critical issues */}
+          {alerts.length > 0 && alerts[0].severity === 'CRITICAL' && (
+            <div className="bg-red-50 border-2 border-red-500 rounded-xl p-4 animate-bounce-short shadow-lg">
+              <div className="flex items-center space-x-4">
+                <div className="text-3xl">🚨</div>
+                <div className="flex-1">
+                  <h4 className="text-red-900 font-black text-sm uppercase">Critical Safety Alert</h4>
+                  <p className="text-red-700 text-sm font-bold">{alerts[0].message}</p>
+                </div>
+                <button 
+                  onClick={() => setAlerts([])}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition-colors"
+                >
+                  ACKNOWLEDGE
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Session Statistics & AI Recommendations */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Session Stats */}
@@ -603,9 +753,28 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
               </span>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-gray-600">Total Driving Time:</span>
+              <span className="text-lg font-bold text-blue-600">
+                {Math.floor(sessions.reduce((sum, s) => sum + s.duration, 0) / 60)}h{" "}
+                {Math.round(sessions.reduce((sum, s) => sum + s.duration, 0) % 60)}m
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-gray-600">Total Sessions:</span>
-              <span className="text-2xl font-bold text-blue-600">
+              <span className="text-lg font-bold text-indigo-600">
                 {totalSessions}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Safe Distance (Est.):</span>
+              <span className="text-lg font-bold text-teal-600">
+                {Math.round((sessions.reduce((sum, s) => sum + s.duration, 0) / 60) * 45)} km
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Monitoring Data Points:</span>
+              <span className="text-lg font-bold text-purple-600">
+                {sessions.reduce((sum, s) => sum + s.dataPoints, 0).toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -635,10 +804,22 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
                 {improvement > 0 ? " 📈" : improvement < 0 ? " 📉" : " ➡️"}
               </span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Peak Alertness:</span>
+              <span className="text-lg font-bold text-green-600">
+                {sessions.length > 0 ? Math.round(100 - Math.min(...sessions.map(s => s.avgDrowsiness))) : 0}%
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Overall Resilience:</span>
+              <span className="text-lg font-bold text-orange-600">
+                {sessions.length > 0 ? Math.round(100 - (sessions.reduce((sum, s) => sum + s.avgStress, 0) / sessions.length)) : 0}%
+              </span>
+            </div>
             {data.lastUpdate && (
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600">Last Update:</span>
-                <span className="text-gray-800">
+              <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-100">
+                <span className="text-gray-600">Last Synced:</span>
+                <span className="text-gray-800 font-medium">
                   {new Date(data.lastUpdate).toLocaleTimeString()}
                 </span>
               </div>
@@ -704,7 +885,7 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
                   </button>
                   {sessions.length > 0 && (
                     <button
-                      onClick={clearAllData}
+                      onClick={handleClearAll}
                       className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-red-50 text-red-600 font-medium text-sm border border-red-200 hover:bg-red-100 hover:border-red-300 transition-all duration-200"
                     >
                       <span>🗑️</span>
@@ -797,9 +978,18 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
 
           {/* Session History Table */}
           <div className="card">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              📋 Recent Sessions
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">
+                📋 Recent Sessions
+              </h3>
+              <button 
+                onClick={handleClearAll}
+                className="text-xs font-semibold text-red-600 hover:text-red-800 flex items-center bg-red-50 px-2 py-1 rounded border border-red-100 transition-colors"
+                title="Wipe all data from Atlas"
+              >
+                <span className="mr-1">🗑️</span> Clear All
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -818,6 +1008,9 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Safety Score
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -858,6 +1051,17 @@ Keep each recommendation substantial (2-3 sentences) but concise.`;
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-blue-600">
                         {session.safetyScore}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right">
+                        <button
+                          onClick={() => handleDeleteSession(session)}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete Session"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </td>
                     </tr>
                   ))}

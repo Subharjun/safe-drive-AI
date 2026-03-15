@@ -200,7 +200,8 @@ export class DataManager {
    */
   async getWellnessHistory(): Promise<any[]> {
     try {
-      const response = await fetch('http://localhost:8000/api/wellness/history');
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/wellness/history`);
       if (response.ok) {
         const data = await response.json();
         console.log(`📊 Retrieved ${data.count} wellness records from MongoDB`);
@@ -220,7 +221,8 @@ export class DataManager {
    */
   async getWellnessSessions(): Promise<any[]> {
     try {
-      const response = await fetch('http://localhost:8000/api/wellness/sessions');
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/wellness/sessions`);
       if (response.ok) {
         const data = await response.json();
         console.log(`📊 Retrieved ${data.total_sessions} sessions (${data.total_records} records) from MongoDB`);
@@ -236,11 +238,35 @@ export class DataManager {
   }
 
   /**
+   * Delete a specific wellness session from MongoDB
+   */
+  async deleteSession(sessionId: string, startTime: string, endTime: string): Promise<boolean> {
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/wellness/sessions/${sessionId}?start_time=${encodeURIComponent(startTime)}&end_time=${encodeURIComponent(endTime)}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`🗑️ Deleted session ${sessionId}: ${data.message}`);
+        return true;
+      } else {
+        console.error('Failed to delete wellness session');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error deleting wellness session:', error);
+      return false;
+    }
+  }
+
+  /**
    * Clear all wellness data from MongoDB
    */
   async clearWellnessData(): Promise<boolean> {
     try {
-      const response = await fetch('http://localhost:8000/api/wellness/clear', {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/wellness/clear`, {
         method: 'DELETE'
       });
       if (response.ok) {
@@ -369,6 +395,9 @@ export const {
   getRecentRoutes,
   saveWellnessData,
   getWellnessHistory,
+  getWellnessSessions,
+  deleteSession,
+  clearWellnessData,
   savePreferences,
   getPreferences,
   deleteFromMongoDB,
